@@ -1,0 +1,6 @@
+{
+  "name": "ADIBEX PRESTIGE ENTERPRISE",
+  "description": "ADIBEX PRESTIGE PROPERTIES - Premier Real Estate Platform for Rooms, Lands, and Properties. Verified listings, instant reservations, and secure payments. Your Vision Our Mission.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

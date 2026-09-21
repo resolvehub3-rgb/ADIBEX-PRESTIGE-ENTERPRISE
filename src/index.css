@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body {
+    font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    color: #1a1528;
+    background-color: #FAFAFD;
+  }
+}
+
+/* Custom scrollbars and styling */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #f1edf7;
+}
+::-webkit-scrollbar-thumb {
+  background: #c3b4dc;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2A0845;
+}
