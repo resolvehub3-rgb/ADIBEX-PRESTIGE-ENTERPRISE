@@ -69,7 +69,10 @@ The platform is designed with strict enterprise security, real-time Supabase Pos
 ├── index.html                  # HTML5 entry point with base SEO & Schema.org
 ├── metadata.json               # Application metadata and capabilities
 ├── package.json                # Project dependencies and build scripts
-├── supabase-schema.sql         # Supabase PostgreSQL schema, RLS, and functions
+├── vercel.json                 # Vercel deployment config (SPA rewrite, caching, security headers)
+├── public/
+│   ├── logo.png                # Brand logo asset
+│   └── supabase-schema.sql     # Served at /supabase-schema.sql (1-click copy in the app)
 ├── src/
 │   ├── main.tsx                # React DOM entry point
 │   ├── App.tsx                 # Root router, state orchestration & SEO mounting
@@ -135,7 +138,7 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 ### 3. Database Schema Setup
 1. Log into your Supabase Dashboard.
 2. Open the **SQL Editor**.
-3. Copy the entire contents of `supabase-schema.sql` and run the script.
+3. Copy the entire contents of `public/supabase-schema.sql` and run the script.
 4. The script provisions:
    - Tables: `profiles`, `properties`, `property_units`, `property_media`, `reservations`, `payments`, `viewing_appointments`, `company_settings`, `audit_logs`.
    - Security: Complete Row Level Security (RLS) policies for Owner, Agent, and Customer roles.
@@ -143,11 +146,44 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 
 ### 4. Install Dependencies & Run
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
+> npm or bun work too (`npm install && npm run dev`), but the repo ships a `pnpm-lock.yaml`, which is what Vercel uses for reproducible installs.
 
 The application will start at `http://localhost:3000`.
+
+---
+
+## ☁️ Deploying to Vercel
+
+The project is a static Vite SPA and is configured for Vercel via `vercel.json` (build command, `dist/` output, SPA fallback rewrite, immutable asset caching, and security headers).
+
+### 1. Import the Repository
+1. Push the repository to GitHub/GitLab/Bitbucket.
+2. In [Vercel](https://vercel.com/new), import the repo — Vercel auto-detects the Vite framework and pnpm lockfile.
+3. Deploy with the default settings (no overrides needed).
+
+### 2. Environment Variables
+Add these under **Project → Settings → Environment Variables** *before* the first deploy. They are `VITE_`-prefixed, so they are inlined into the client bundle **at build time** — changing one requires a redeploy:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `VITE_SUPABASE_URL` | ✅ | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | ✅ | Supabase anonymous/public key |
+| `VITE_PAYMENT_PUBLIC_KEY` | Recommended | Paystack/public payment key |
+| `VITE_MAP_API_KEY` | Optional | Maps integration |
+
+> If the Supabase variables are missing, the app still boots and lets an admin paste credentials via the in-app **Supabase Database Connection** modal (stored in `localStorage`).
+>
+> Never set `PAYMENT_SECRET_KEY`, `SMTP_*`, or any service-role key in a `VITE_` variable — Vercel exposes all build-time env to the browser bundle. Those belong in server-side secrets only.
+
+### 3. Local Verification (matches the Vercel build)
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm preview
+```
 
 ---
 

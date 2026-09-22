@@ -8,6 +8,7 @@ interface AuthModalProps {
   onClose: () => void;
   defaultRole?: UserRole;
   initialMode?: 'signin' | 'signup';
+  onAuthSuccess?: (role: UserRole) => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -15,6 +16,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   defaultRole = 'customer',
   initialMode = 'signin',
+  onAuthSuccess,
 }) => {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
@@ -40,6 +42,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setError(res.error || 'Invalid credentials');
         } else {
           onClose();
+          onAuthSuccess?.(res.role || role);
         }
       } else {
         const res = await signUp(email, password, fullName, role, phone);
@@ -47,6 +50,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setError(res.error || 'Could not register user');
         } else {
           onClose();
+          onAuthSuccess?.(role);
         }
       }
     } catch (err: any) {

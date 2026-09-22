@@ -314,10 +314,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
               The enterprise database is configured. The Company Owner can publish rooms, apartments, and lands via the Owner Admin Dashboard.
             </p>
             <button
-              onClick={() => onNavigate('admin')}
+              onClick={() => onNavigate('search')}
               className="px-4 py-2 rounded-xl bg-[#2A0845] text-white text-xs font-bold hover:bg-[#3D105E] transition-colors"
             >
-              Go to Owner Admin Dashboard
+              Browse All Properties
             </button>
           </div>
         )}

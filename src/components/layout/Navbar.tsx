@@ -159,19 +159,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
-            {/* Customer Saved Favorites */}
-            <button
-              onClick={() => handleNav('portal', { tab: 'favorites' })}
-              title="Saved Properties"
-              className="relative p-2 rounded-lg text-slate-600 hover:text-[#2A0845] hover:bg-purple-50 transition-colors cursor-pointer"
-            >
-              <Heart className="w-5 h-5" />
-              {favoritesCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#D4AF37] text-[#2A0845] text-[10px] font-bold flex items-center justify-center">
-                  {favoritesCount}
-                </span>
-              )}
-            </button>
+            {/* Customer Saved Favorites - hidden for admin */}
+            {profile?.role !== 'company_owner_admin' && (
+              <button
+                onClick={() => handleNav('portal', { tab: 'favorites' })}
+                title="Saved Properties"
+                className="relative p-2 rounded-lg text-slate-600 hover:text-[#2A0845] hover:bg-purple-50 transition-colors cursor-pointer"
+              >
+                <Heart className="w-5 h-5" />
+                {favoritesCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#D4AF37] text-[#2A0845] text-[10px] font-bold flex items-center justify-center">
+                    {favoritesCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Portal Switcher & Role Badges */}
             {profile ? (
@@ -224,28 +226,33 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </button>
                     )}
 
-                    <button
-                      onClick={() => handleNav('portal', { tab: 'reservations' })}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-purple-50 transition-colors"
-                    >
-                      <Calendar className="w-4 h-4 text-purple-600" />
-                      <span>My Reservations</span>
-                    </button>
+                    {profile.role !== 'company_owner_admin' && (
+                      <>
+                        <button
+                          onClick={() => handleNav('portal', { tab: 'reservations' })}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-purple-50 transition-colors"
+                        >
+                          <Calendar className="w-4 h-4 text-purple-600" />
+                          <span>My Reservations</span>
+                        </button>
 
-                    <button
-                      onClick={() => handleNav('portal', { tab: 'payments' })}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-purple-50 transition-colors"
-                    >
-                      <CreditCard className="w-4 h-4 text-emerald-600" />
-                      <span>My Payments & Receipts</span>
-                    </button>
+                        <button
+                          onClick={() => handleNav('portal', { tab: 'payments' })}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-purple-50 transition-colors"
+                        >
+                          <CreditCard className="w-4 h-4 text-emerald-600" />
+                          <span>My Payments & Receipts</span>
+                        </button>
+                      </>
+                    )}
 
                     <div className="border-t border-slate-100 my-1" />
 
                     <button
-                      onClick={() => {
-                        signOut();
+                      onClick={async () => {
+                        await signOut();
                         setUserDropdownOpen(false);
+                        handleNav('home');
                       }}
                       className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
                     >
@@ -365,7 +372,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Customer Portal
               </button>
               <button
-                onClick={signOut}
+                onClick={async () => {
+                  await signOut();
+                  handleNav('home');
+                }}
                 className="w-full py-2 text-rose-600 text-xs font-semibold text-center"
               >
                 Sign Out

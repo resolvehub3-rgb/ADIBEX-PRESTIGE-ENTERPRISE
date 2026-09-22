@@ -19,6 +19,7 @@ import {
   ViewingAppointment,
   CompanySettings,
   CurrencyCode,
+  UserRole,
   DEFAULT_COMPANY_SETTINGS,
 } from './types';
 import {
@@ -88,6 +89,26 @@ const MainApplication: React.FC = () => {
     loadAllData();
   }, [profile?.role]);
 
+  // Track fresh sign-in to redirect owners to their dashboard
+  const handleAuthSuccess = (role: UserRole) => {
+    if (role === 'company_owner_admin') {
+      setCurrentView('admin');
+    } else if (role === 'agent') {
+      setCurrentView('agent');
+    }
+  };
+
+  // Handle initial URL path-based routing (supports /admin, /agent on page load / refresh)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const path = window.location.pathname;
+    if (path === '/admin') {
+      setCurrentView('admin');
+    } else if (path === '/agent') {
+      setCurrentView('agent');
+    }
+  }, []);
+
   // Handle deep-linking via URL query parameters for SEO and shared Open Graph links
   useEffect(() => {
     if (properties.length > 0 && typeof window !== 'undefined') {
@@ -117,7 +138,7 @@ const MainApplication: React.FC = () => {
               propertyType: typeParam || 'all',
             });
           }
-        } else if (['home', 'how-it-works', 'portal', 'admin', 'agent'].includes(viewParam)) {
+        } else if (['home', 'how-it-works', 'portal'].includes(viewParam)) {
           setCurrentView(viewParam);
         }
       }
@@ -129,8 +150,8 @@ const MainApplication: React.FC = () => {
     if (typeof window === 'undefined') return;
 
     if (currentView === 'property_detail' && selectedProperty) {
-      const query = `?property=${encodeURIComponent(selectedProperty.slug || selectedProperty.id)}`;
-      window.history.replaceState(null, '', `${window.location.pathname}${query}`);
+      const slug = selectedProperty.slug || selectedProperty.id;
+      window.history.replaceState(null, '', `/?property=${encodeURIComponent(slug)}`);
     } else if (currentView === 'search') {
       const params = new URLSearchParams();
       params.set('view', 'search');
@@ -140,13 +161,24 @@ const MainApplication: React.FC = () => {
       if (searchInitialFilters?.propertyType && searchInitialFilters.propertyType !== 'all') {
         params.set('type', searchInitialFilters.propertyType);
       }
-      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+      window.history.replaceState(null, '', `/?${params.toString()}`);
     } else if (currentView === 'how-it-works') {
-      window.history.replaceState(null, '', `${window.location.pathname}?view=how-it-works`);
+      window.history.replaceState(null, '', '/?view=how-it-works');
+    } else if (currentView === 'admin') {
+      window.history.replaceState(null, '', '/admin');
+    } else if (currentView === 'agent') {
+      window.history.replaceState(null, '', '/agent');
     } else if (currentView === 'home') {
-      window.history.replaceState(null, '', window.location.pathname);
+      window.history.replaceState(null, '', '/');
     }
   }, [currentView, selectedProperty, searchInitialFilters]);
+
+  // Redirect admin away from customer portal
+  useEffect(() => {
+    if (currentView === 'portal' && profile?.role === 'company_owner_admin') {
+      setCurrentView('admin');
+    }
+  }, [currentView, profile?.role]);
 
   const handleToggleFavorite = (propertyId: string) => {
     let updated: string[];
@@ -207,14 +239,16 @@ const MainApplication: React.FC = () => {
       {/* Supabase Status Banner */}
 
 
-      {/* Main Brand Navbar */}
-      <Navbar
-        currentView={currentView}
-        onNavigate={handleNavigate}
-        selectedCurrency={selectedCurrency}
-        onCurrencyChange={setSelectedCurrency}
-        favoritesCount={favorites.length}
-      />
+      {/* Main Brand Navbar - Hidden for Admin Dashboard */}
+      {currentView !== 'admin' && (
+        <Navbar
+          currentView={currentView}
+          onNavigate={handleNavigate}
+          selectedCurrency={selectedCurrency}
+          onCurrencyChange={setSelectedCurrency}
+          favoritesCount={favorites.length}
+        />
+      )}
 
       {/* Main View Router */}
       <main className="flex-1">
@@ -256,7 +290,7 @@ const MainApplication: React.FC = () => {
           />
         )}
 
-        {currentView === 'portal' && (
+        {currentView === 'portal' && profile?.role !== 'company_owner_admin' && (
           <CustomerPortalView
             initialTab={customerPortalTab}
             properties={properties}
@@ -280,6 +314,7 @@ const MainApplication: React.FC = () => {
             isLoading={isLoading}
             onRefreshData={loadAllData}
             onOpenAuth={() => setAuthModalOpen(true)}
+            onNavigate={handleNavigate}
           />
         )}
 
@@ -302,11 +337,13 @@ const MainApplication: React.FC = () => {
         )}
       </main>
 
-      {/* Brand Footer */}
-      <Footer settings={settings} onNavigate={handleNavigate} />
+      {/* Brand Footer - Hidden for Admin Dashboard */}
+      {currentView !== 'admin' && (
+        <Footer settings={settings} onNavigate={handleNavigate} />
+      )}
 
       {/* Global Modals */}
-      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} onAuthSuccess={handleAuthSuccess} />
 
       {propertyToReserve && (
         <ReservationModal

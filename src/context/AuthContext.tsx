@@ -10,7 +10,7 @@ interface AuthContextType {
   session: Session | null;
   isLoading: boolean;
   isConfigured: boolean;
-  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
   signUp: (email: string, password: string, fullName: string, role?: UserRole, phone?: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<{ success: boolean; error?: string }>;
@@ -123,7 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [isConfigured]);
 
-  const signIn = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const signIn = async (email: string, password: string): Promise<{ success: boolean; error?: string; role?: UserRole }> => {
     try {
       const supabase = getSupabase();
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -137,6 +137,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.user) {
         await fetchProfile(data.user);
+        const profileRes = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', data.user.id)
+          .maybeSingle();
+        const actualRole = (profileRes.data?.role as UserRole) || 'customer';
+        return { success: true, role: actualRole };
       }
 
       return { success: true };

@@ -114,91 +114,153 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({
   // If user is not authenticated with a real account, prompt to sign in or register
   if (!user || !profile) {
     return (
-      <div className="min-h-[80vh] bg-gradient-to-br from-[#1A042B] via-[#2A0845] to-[#3D105E] flex items-center justify-center p-4 relative overflow-hidden">
-        {/* Decorative background elements */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-[#D4AF37]/5 rounded-full blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-[#D4AF37]/5 rounded-full blur-3xl" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#D4AF37]/3 rounded-full blur-3xl" />
-        </div>
+      <div className="min-h-[80vh] bg-gradient-to-br from-[#0F0118] via-[#1A042B] to-[#0D0015] flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Animated background orbs */}
+        <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[#2A0845]/30 blur-[120px] animate-pulse pointer-events-none" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] rounded-full bg-[#D4AF37]/10 blur-[100px] animate-pulse pointer-events-none" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-[40%] right-[20%] w-[300px] h-[300px] rounded-full bg-purple-600/10 blur-[80px] animate-pulse pointer-events-none" style={{ animationDelay: '2s' }} />
 
-        <div className="relative z-10 max-w-lg w-full">
-          {/* Main Card */}
-          <div className="bg-white/10 backdrop-blur-xl rounded-[2rem] p-8 sm:p-10 border border-white/10 shadow-2xl">
-            {/* Logo Section */}
-            <div className="flex justify-center mb-6">
-              <div className="relative">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#2A0845] to-[#451368] flex items-center justify-center ring-2 ring-[#D4AF37]/50 ring-offset-2 ring-offset-[#1A042B] shadow-xl p-2">
-                  <img src="/logo.png" alt="ADIBEX PRESTIGE Logo" className="w-full h-full object-contain rounded-xl" />
+        {/* Floating grid pattern */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{
+          backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
+          backgroundSize: '40px 40px',
+        }} />
+
+        <div className="relative z-10 max-w-6xl w-full">
+          {/* Main two-column card */}
+          <div className="relative bg-white/[0.04] backdrop-blur-2xl rounded-[2rem] border border-white/[0.08] shadow-2xl shadow-purple-950/50 overflow-hidden">
+            {/* Top accent line */}
+            <div className="h-[2px] bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent" />
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[560px]">
+              {/* Left Column — Main Content */}
+              <div className="p-8 sm:p-10 lg:p-12 flex flex-col justify-center space-y-7 border-b lg:border-b-0 lg:border-r border-white/[0.06]">
+                {/* Badge */}
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 w-fit">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] animate-pulse" />
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">
+                    Customer Portal
+                  </span>
                 </div>
-                <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-[#D4AF37] flex items-center justify-center shadow-lg">
-                  <Lock className="w-4 h-4 text-[#2A0845]" />
+
+                {/* Heading */}
+                <div className="space-y-3">
+                  <h2 className="text-3xl sm:text-4xl font-extrabold text-white leading-tight">
+                    Real-time Reservations & Payment Receipts
+                  </h2>
+                  <p className="text-sm text-purple-200/60 leading-relaxed max-w-md">
+                    Sign in or register your account to manage your property reservations, track payment verifications, schedule inspection tours, and access official receipts.
+                  </p>
                 </div>
-              </div>
-            </div>
 
-            {/* Heading */}
-            <div className="text-center mb-8">
-              <span className="inline-block px-3 py-1 rounded-full bg-[#D4AF37]/20 text-[#D4AF37] text-[10px] font-bold uppercase tracking-widest mb-3">
-                Customer Portal
-              </span>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-white mb-2">
-                Real-time Reservations & Payment Receipts
-              </h2>
-              <p className="text-sm text-purple-200/80 leading-relaxed max-w-sm mx-auto">
-                Sign in or register your account to manage your property reservations, track payment verifications, schedule inspection tours, and access official receipts.
-              </p>
-            </div>
+                {/* Feature Grid — 2 columns */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    { icon: Calendar, label: 'Manage Reservations', desc: 'Track all your bookings', color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/20' },
+                    { icon: CreditCard, label: 'Track Payments', desc: 'Monitor transaction status', color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20' },
+                    { icon: Eye, label: 'Schedule Viewings', desc: 'Book inspection tours', color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/20' },
+                    { icon: FileText, label: 'Access Receipts', desc: 'Download official receipts', color: 'text-rose-400', bg: 'bg-rose-400/10', border: 'border-rose-400/20' },
+                  ].map((feature, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-start gap-3 p-4 rounded-2xl bg-white/[0.04] border ${feature.border} hover:bg-white/[0.08] transition-all group cursor-default`}
+                    >
+                      <div className={`w-10 h-10 rounded-xl ${feature.bg} flex items-center justify-center shrink-0 ${feature.color} group-hover:scale-110 transition-transform`}>
+                        <feature.icon className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-sm font-bold text-white block">{feature.label}</span>
+                        <span className="text-[11px] text-purple-200/50">{feature.desc}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-            {/* Feature Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
-              {[
-                { icon: Calendar, label: 'Manage Reservations', desc: 'Track all your bookings', color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-                { icon: CreditCard, label: 'Track Payments', desc: 'Monitor transaction status', color: 'text-blue-400', bg: 'bg-blue-400/10' },
-                { icon: Eye, label: 'Schedule Viewings', desc: 'Book inspection tours', color: 'text-amber-400', bg: 'bg-amber-400/10' },
-                { icon: FileText, label: 'Access Receipts', desc: 'Download official receipts', color: 'text-rose-400', bg: 'bg-rose-400/10' },
-              ].map((feature, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                {/* CTA Button */}
+                <button
+                  onClick={onOpenAuth}
+                  className="group relative w-full py-4 rounded-2xl bg-gradient-to-r from-[#D4AF37] via-[#E8C547] to-[#D4AF37] text-[#1A042B] font-extrabold text-sm tracking-wide transition-all duration-300 hover:shadow-lg hover:shadow-[#D4AF37]/25 hover:scale-[1.02] active:scale-[0.98] cursor-pointer overflow-hidden"
                 >
-                  <div className={`w-11 h-11 rounded-xl ${feature.bg} flex items-center justify-center shrink-0 ${feature.color} group-hover:scale-110 transition-transform`}>
-                    <feature.icon className="w-5 h-5" />
+                  <span className="relative z-10 flex items-center justify-center gap-2.5">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+                    </svg>
+                    Sign In or Register
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
+                </button>
+              </div>
+
+              {/* Right Column — Visual Info Panel */}
+              <div className="p-8 sm:p-10 lg:p-12 flex flex-col justify-center relative">
+                {/* Decorative corner accent */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#D4AF37]/10 to-transparent rounded-bl-[4rem]" />
+
+                <div className="space-y-8 relative z-10">
+                  {/* Logo */}
+                  <div className="flex justify-center lg:justify-start">
+                    <div className="relative">
+                      <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#2A0845] to-[#451368] flex items-center justify-center ring-2 ring-[#D4AF37]/50 ring-offset-2 ring-offset-[#0F0118] shadow-xl p-2.5">
+                        <img src="/logo.png" alt="ADIBEX PRESTIGE Logo" className="w-full h-full object-contain rounded-xl" />
+                      </div>
+                      <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-[#D4AF37] flex items-center justify-center shadow-lg">
+                        <Lock className="w-4 h-4 text-[#1A042B]" />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-sm font-bold text-white block">{feature.label}</span>
-                    <span className="text-[11px] text-purple-200/60">{feature.desc}</span>
+
+                  {/* How it works */}
+                  <div className="space-y-5">
+                    <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-[#D4AF37]/80">
+                      How It Works
+                    </h3>
+
+                    {[
+                      { step: '01', title: 'Create Account', desc: 'Register with your email in seconds' },
+                      { step: '02', title: 'Browse Properties', desc: 'Explore our premium portfolio' },
+                      { step: '03', title: 'Reserve & Pay', desc: 'Book your property and submit payment' },
+                      { step: '04', title: 'Track & Manage', desc: 'Monitor status and download receipts' },
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-start gap-4 group/item">
+                        <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0 group-hover/item:bg-[#D4AF37]/10 group-hover/item:border-[#D4AF37]/20 transition-all duration-300">
+                          <span className="text-xs font-extrabold text-[#D4AF37]/60 group-hover/item:text-[#D4AF37] transition-colors">{item.step}</span>
+                        </div>
+                        <div className="pt-1">
+                          <p className="text-sm font-semibold text-white/90">{item.title}</p>
+                          <p className="text-xs text-purple-300/40 mt-0.5">{item.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Divider */}
+                  <div className="h-px bg-gradient-to-r from-white/[0.06] via-white/[0.10] to-white/[0.06]" />
+
+                  {/* Trust badges */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { icon: ShieldCheck, label: 'Secure', desc: 'Encrypted' },
+                      { icon: Star, label: 'Trusted', desc: 'Verified' },
+                      { icon: MapPin, label: 'Ghana &\nWorldwide', desc: 'Coverage' },
+                    ].map((badge, i) => (
+                      <div key={i} className="text-center p-3 rounded-xl bg-white/[0.03] border border-white/[0.05]">
+                        <badge.icon className="w-5 h-5 text-[#D4AF37]/60 mx-auto mb-2" />
+                        <p className="text-[11px] font-bold text-white/80 whitespace-pre-line leading-tight">{badge.label}</p>
+                        <p className="text-[9px] text-purple-300/30 mt-0.5">{badge.desc}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-
-            {/* CTA Button */}
-            <button
-              onClick={onOpenAuth}
-              className="w-full group inline-flex items-center justify-center gap-3 py-4 rounded-2xl bg-[#D4AF37] text-[#2A0845] font-extrabold text-sm hover:bg-[#E5C04A] transition-all shadow-xl shadow-[#D4AF37]/20 cursor-pointer"
-            >
-              <span>Sign In or Register</span>
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </button>
-
-            {/* Trust Indicators */}
-            <div className="flex items-center justify-center gap-4 mt-6 pt-6 border-t border-white/10">
-              <div className="flex items-center gap-1.5 text-purple-200/60">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-medium">Secure</span>
-              </div>
-              <div className="w-1 h-1 rounded-full bg-purple-200/30" />
-              <div className="flex items-center gap-1.5 text-purple-200/60">
-                <Star className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-medium">Trusted</span>
-              </div>
-              <div className="w-1 h-1 rounded-full bg-purple-200/30" />
-              <div className="flex items-center gap-1.5 text-purple-200/60">
-                <MapPin className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-medium">Ghana & Worldwide</span>
               </div>
             </div>
+          </div>
+
+          {/* Bottom brand mark */}
+          <div className="mt-6 text-center">
+            <p className="text-[11px] font-semibold text-purple-400/30 tracking-widest uppercase">
+              ADIBEX PRESTIGE Enterprise
+            </p>
           </div>
         </div>
       </div>

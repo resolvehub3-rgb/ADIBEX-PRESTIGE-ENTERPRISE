@@ -27,12 +27,12 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
   }, [credentials.url, credentials.anonKey, isOpen]);
 
   useEffect(() => {
-    // Pre-load schema text from root for 1-click copy
+    // Pre-load schema text from public/ (served at site root) for 1-click copy
     fetch('/supabase-schema.sql')
       .then((res) => res.text())
       .then((text) => setSchemaText(text))
       .catch(() => {
-        setSchemaText('-- Please copy the schema from supabase-schema.sql in the project root');
+        setSchemaText('-- Please copy the schema from public/supabase-schema.sql in the project source');
       });
   }, []);
 
