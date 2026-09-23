@@ -182,11 +182,9 @@ export function buildPropertySEOMetadata(
     property.transaction_type,
   ].join(', ');
 
-  // Primary image
+  // Primary image (falls back to the brand logo so shared links always preview correctly)
   const primaryMedia = property.media?.find((m) => m.is_primary) || property.media?.[0];
-  const ogImage =
-    primaryMedia?.url ||
-    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80';
+  const ogImage = primaryMedia?.url || `${base}/logo.png`;
 
   // Schema.org RealEstateListing + Specific Accommodation/Land/Residence type
   const specificType = getSchemaPropertyType(property.property_type);
@@ -323,8 +321,7 @@ export function buildViewSEOMetadata(
   const defaultKeywords =
     'room, single room, self contained room, rooms for rent in Ghana, single room self contained, lands, lands for sale, titled land Accra, serviced plots Ghana, properties, properties for rent, properties for sale, commercial properties, houses for rent, luxury apartments, real estate Ghana, ADIBEX PRESTIGE PROPERTIES, ADIBEX PRESTIGE ENTERPRISE, East Legon properties, Airport residential, Kumasi lands, property booking SaaS';
 
-  const defaultImage =
-    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80';
+  const defaultImage = `${base}/logo.png`;
 
   // Specific search filter optimizations
   if (view === 'search') {
@@ -357,7 +354,7 @@ export function buildViewSEOMetadata(
       ogType: 'website',
       ogImage: defaultImage,
       ogImageAlt: `${searchTopic} - ${brand}`,
-      twitterCard: 'summary_large_image',
+      twitterCard: 'summary',
       jsonLd: {
         '@context': 'https://schema.org',
         '@type': 'SearchResultsPage',
@@ -382,7 +379,7 @@ export function buildViewSEOMetadata(
       ogType: 'website',
       ogImage: defaultImage,
       ogImageAlt: `How It Works - ${brand}`,
-      twitterCard: 'summary_large_image',
+      twitterCard: 'summary',
       jsonLd: {
         '@context': 'https://schema.org',
         '@type': 'HowTo',
@@ -427,7 +424,7 @@ export function buildViewSEOMetadata(
       slogan: settings?.motto || 'Your Vision Our Mission',
       description: homeDescription,
       url: base,
-      logo: `${base}/favicon.ico`,
+      logo: `${base}/logo.png`,
       image: defaultImage,
       telephone: settings?.phone || '+233 24 000 0000',
       email: settings?.email || 'info@adibexprestige.com',
@@ -570,7 +567,7 @@ export function buildViewSEOMetadata(
     ogType: 'website',
     ogImage: defaultImage,
     ogImageAlt: `${brand} - Rooms, Lands, Properties`,
-    twitterCard: 'summary_large_image',
+    twitterCard: 'summary',
     jsonLd: homeJsonLd,
   };
 }
