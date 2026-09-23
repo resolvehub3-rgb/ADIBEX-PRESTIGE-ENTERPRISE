@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/layout/Navbar';
 import { Footer } from './components/layout/Footer';
@@ -97,6 +97,21 @@ const MainApplication: React.FC = () => {
       setCurrentView('agent');
     }
   };
+
+  // Detect owner/agent roles when a saved session is restored (page load or refresh)
+  // and send them straight to their dashboard. Runs once per session; if the user
+  // arrived via a deep link (property/view URL) that destination keeps priority.
+  const handledSessionRole = useRef(false);
+  useEffect(() => {
+    if (handledSessionRole.current || !profile?.role) return;
+    handledSessionRole.current = true;
+    if (currentView !== 'home') return;
+    if (profile.role === 'company_owner_admin') {
+      setCurrentView('admin');
+    } else if (profile.role === 'agent') {
+      setCurrentView('agent');
+    }
+  }, [profile?.role, currentView]);
 
   // Handle initial URL path-based routing (supports /admin, /agent on page load / refresh)
   useEffect(() => {

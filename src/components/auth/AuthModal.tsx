@@ -6,7 +6,6 @@ import { UserRole } from '../../types';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  defaultRole?: UserRole;
   initialMode?: 'signin' | 'signup';
   onAuthSuccess?: (role: UserRole) => void;
 }
@@ -14,7 +13,6 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
-  defaultRole = 'customer',
   initialMode = 'signin',
   onAuthSuccess,
 }) => {
@@ -24,7 +22,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState<UserRole>(defaultRole);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -42,15 +39,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setError(res.error || 'Invalid credentials');
         } else {
           onClose();
-          onAuthSuccess?.(res.role || role);
+          onAuthSuccess?.(res.role || 'customer');
         }
       } else {
-        const res = await signUp(email, password, fullName, role, phone);
+        const res = await signUp(email, password, fullName, 'customer', phone);
         if (!res.success) {
           setError(res.error || 'Could not register user');
         } else {
           onClose();
-          onAuthSuccess?.(role);
+          onAuthSuccess?.('customer');
         }
       }
     } catch (err: any) {
@@ -155,25 +152,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <div className="col-span-2">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Account Role</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'customer', label: 'Customer' },
-                    { id: 'agent', label: 'Agent / Staff' },
-                    { id: 'company_owner_admin', label: 'Company Owner' },
-                  ].map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setRole(r.id as UserRole)}
-                      className={`py-2 px-2 rounded-lg border text-xs font-semibold transition-all text-center ${
-                        role === r.id
-                          ? 'border-[#2A0845] bg-[#2A0845] text-white shadow-xs'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-3">
+                  <span className="py-2 px-4 rounded-lg border border-[#2A0845] bg-[#2A0845] text-white text-xs font-semibold shadow-xs text-center">
+                    Customer
+                  </span>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Self-registration is open to customers only. Agent and Company Owner accounts are created by the administrator.
+                  </p>
                 </div>
               </div>
             </div>
