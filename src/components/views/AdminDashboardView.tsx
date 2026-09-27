@@ -55,8 +55,9 @@ import {
   fetchStaffProfiles,
   updateUserRole,
 } from '../../lib/db';
-import { primaryMedia } from '../../lib/media';
+import { primaryMedia, isDurableMediaUrl, isPaymentProofPath } from '../../lib/media';
 import { PropertyFormModal } from '../modals/PropertyFormModal';
+import { PaymentProofModal } from '../modals/PaymentProofModal';
 import {
   DashboardStatsSkeleton,
   DashboardTableSkeleton,
@@ -98,6 +99,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Modals & form state
   const [propertyModalOpen, setPropertyModalOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [proofPayment, setProofPayment] = useState<Payment | null>(null);
 
   // Settings edit state
   const [settingsForm, setSettingsForm] = useState<CompanySettings>(settings);
@@ -1162,16 +1164,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                               <span className="font-extrabold text-sm text-[#2A0845]">{formatCurrency(pay.amount, currency, pay.currency)}</span>
                             </td>
                             <td className="py-4 px-5">
-                              {pay.payment_proof_url ? (
-                                <a
-                                  href={pay.payment_proof_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 text-[11px] font-semibold transition-colors"
+                              {pay.payment_proof_url && (isDurableMediaUrl(pay.payment_proof_url) || isPaymentProofPath(pay.payment_proof_url)) ? (
+                                <button
+                                  onClick={() => setProofPayment(pay)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 text-[11px] font-semibold transition-colors cursor-pointer"
                                 >
                                   <Eye className="w-3 h-3" />
                                   View Proof
-                                </a>
+                                </button>
                               ) : pay.bank_transaction_id ? (
                                 <span className="font-mono text-[10px] text-slate-600 bg-slate-50 px-2 py-1 rounded-md">Ref: {pay.bank_transaction_id}</span>
                               ) : (
@@ -2059,6 +2059,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           onRefreshData();
         }}
       />
+
+      {/* Payment Proof Viewer */}
+      <PaymentProofModal payment={proofPayment} onClose={() => setProofPayment(null)} />
     </div>
   );
 };

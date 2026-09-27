@@ -14,9 +14,30 @@ export function isDurableMediaUrl(url?: string | null): boolean {
   if (!value) return false;
   const lower = value.toLowerCase();
   if (lower.startsWith('blob:')) return false;
-  if (lower.startsWith('data:image/') || lower.startsWith('data:video/')) return true;
+  if (lower.startsWith('data:image/') || lower.startsWith('data:video/') || lower.startsWith('data:application/pdf')) return true;
   if (lower.startsWith('http://') || lower.startsWith('https://')) return true;
   return value.startsWith('/');
+}
+
+/** True for data: URLs, which must be rendered in-page (browsers block them in new tabs). */
+export function isInlineDataUrl(url?: string | null): boolean {
+  if (!url) return false;
+  const lower = String(url).trim().toLowerCase();
+  return lower.startsWith('data:image/') || lower.startsWith('data:video/') || lower.startsWith('data:application/pdf');
+}
+
+/**
+ * Detects a Storage object reference stored instead of a fetchable URL:
+ * a bucket-qualified path ("payment-proofs/123_abc.jpg") or a bare object
+ * path ("123_abc.jpg") saved when only one bucket existed. A signed URL can
+ * be minted for these on demand.
+ */
+export function isPaymentProofPath(url?: string | null): boolean {
+  if (!url) return false;
+  const value = String(url).trim();
+  if (!value || value.includes('://')) return false; // real URLs are not paths
+  if (/^(blob|data):/i.test(value)) return false;
+  return value.startsWith('payment-proofs/') || /^[\w-]+\.[a-z0-9]{1,8}$/i.test(value);
 }
 
 /** Crawlers (Open Graph / JSON-LD) only understand fetchable absolute URLs. */
@@ -161,4 +182,32 @@ export async function compressImageToDataUrl(
 
   if (!dataUrl || dataUrl.length > HARD_BASE64_LIMIT) return null;
   return dataUrl;
+}
+
+/**
+ * Last-resort fallback for non-image uploads (e.g. PDF payment proofs):
+ * Base64-encodes the raw file into a durable data URL when Storage is
+ * unavailable, so the document still reaches the reviewer instead of
+ * silently disappearing.
+ */
+export function fileToDataUrl(file: File, maxBytes = 4_000_000): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof FileReader === 'undefined' || !file) {
+      resolve(null);
+      return;
+    }
+    if (file.size > maxBytes) {
+      resolve(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' && reader.result.startsWith('data:')
+        ? reader.result
+        : null;
+      resolve(result);
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
 }

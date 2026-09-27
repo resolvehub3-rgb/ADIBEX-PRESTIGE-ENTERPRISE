@@ -1,5 +1,11 @@
 import { getSupabase, getSupabaseCredentials } from './supabase';
-import { isAbsoluteHttpUrl, isDurableMediaUrl, compressImageToDataUrl } from './media';
+import {
+  isAbsoluteHttpUrl,
+  isDurableMediaUrl,
+  isPaymentProofPath,
+  compressImageToDataUrl,
+  fileToDataUrl,
+} from './media';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Property,
@@ -593,8 +599,6 @@ export async function uploadMediaFile(
 
       if (bucketError) {
         storageError = bucketError.message || `Storage bucket "${bucket}" is not available`;
-      } else if (bucketInfo && bucketInfo.public === false) {
-        storageError = `Storage bucket "${bucket}" is private, so its files cannot be displayed publicly`;
       } else {
         const objectPath = `${Date.now()}_${randomObjectToken()}${safeFileExtension(file.name)}`;
         const { error: uploadError } = await supabase.storage
@@ -603,6 +607,10 @@ export async function uploadMediaFile(
 
         if (uploadError) {
           storageError = uploadError.message;
+        } else if (bucket === 'payment-proofs') {
+          // Private bucket: public URLs don't work. Persist the object path and
+          // mint a short-lived signed URL at view time (see getPaymentProofUrl).
+          return { url: `${bucket}/${objectPath}`, source: 'storage' };
         } else {
           const { data: publicUrl } = supabase.storage.from(bucket).getPublicUrl(objectPath);
           const candidate = publicUrl?.publicUrl;
@@ -617,14 +625,48 @@ export async function uploadMediaFile(
     storageError = err?.message || 'Supabase Storage is unreachable';
   }
 
-  // Storage unavailable → keep the photo working with an inline durable copy.
-  const limits = INLINE_UPLOAD_LIMITS[bucket] || INLINE_UPLOAD_LIMITS['property-media'];
-  const inlineUrl = await compressImageToDataUrl(file, limits);
+  // Storage unavailable → keep the file working with a durable inline copy.
+  // Images are re-compressed; non-images (PDF proofs) are kept as-is, capped.
+  const isImage = !file.type || file.type.startsWith('image/');
+  const inlineUrl = isImage
+    ? await compressImageToDataUrl(file, INLINE_UPLOAD_LIMITS[bucket] || INLINE_UPLOAD_LIMITS['property-media'])
+    : await fileToDataUrl(file, bucket === 'payment-proofs' ? 4_000_000 : 1_500_000);
   if (inlineUrl) {
     return { url: inlineUrl, source: 'inline', error: storageError };
   }
 
-  return { url: null, error: storageError || `"${file.name}" could not be processed as an image` };
+  return { url: null, error: storageError || `"${file.name}" could not be processed for upload` };
+}
+
+/**
+ * Resolves whatever a payment's payment_proof_url holds into a fetchable URL:
+ * - absolute http(s) URLs (Storage public URLs, legacy uploads) pass through
+ * - inline data: URLs pass through (rendered in-page, never in a new tab)
+ * - bucket-qualified paths ("payment-proofs/...") mint a short-lived signed
+ *   URL so private financial documents stay locked down yet viewable
+ * Returns null only when the reference is dead (e.g. an expired blob: URL).
+ */
+export async function getPaymentProofUrl(payment: Pick<Payment, 'payment_proof_url'>): Promise<string | null> {
+  const raw = payment.payment_proof_url;
+  if (!raw) return null;
+
+  if (isDurableMediaUrl(raw) || isPaymentProofPath(raw)) {
+    if (isPaymentProofPath(raw)) {
+      try {
+        const supabase = getSupabase();
+        const { data, error } = await supabase.storage
+          .from('payment-proofs')
+          .createSignedUrl(raw.replace(/^payment-proofs\//, ''), 60 * 10); // 10 minutes
+        if (error || !data?.signedUrl) return null;
+        return data.signedUrl;
+      } catch {
+        return null;
+      }
+    }
+    return raw;
+  }
+
+  return null;
 }
 
 export async function addPropertyMedia(
