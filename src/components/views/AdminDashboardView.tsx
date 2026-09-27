@@ -1172,6 +1172,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                   <Eye className="w-3 h-3" />
                                   View Proof
                                 </button>
+                              ) : pay.payment_proof_url ? (
+                                <span
+                                  title="The stored proof is no longer accessible (legacy expired link). Ask the customer to re-upload."
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-[11px] font-semibold"
+                                >
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Unavailable
+                                </span>
                               ) : pay.bank_transaction_id ? (
                                 <span className="font-mono text-[10px] text-slate-600 bg-slate-50 px-2 py-1 rounded-md">Ref: {pay.bank_transaction_id}</span>
                               ) : (

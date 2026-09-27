@@ -52,6 +52,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   const [momoNumber, setMomoNumber] = useState(userProfile?.phone || '');
   const [bankTxnId, setBankTxnId] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofWarning, setProofWarning] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [completedReservation, setCompletedReservation] = useState<Reservation | null>(null);
@@ -66,6 +67,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setTimeLeft(settings.reservation_expiry_minutes * 60);
+      setProofWarning(null);
       const timer = setInterval(() => {
         setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
       }, 1000);
@@ -145,6 +147,15 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
       if (proofFile) {
         const uploadRes = await uploadMediaFile(proofFile, 'payment-proofs');
         proofUrl = uploadRes.url;
+        if (!proofUrl) {
+          // Never fail the whole reservation over the attachment: the unit lock
+          // and payment row still go through, but the customer must know the
+          // proof is missing so they can re-send it.
+          setProofWarning(
+            uploadRes.error ||
+              'Your payment proof could not be uploaded. The payment was recorded, but our team will need you to re-send the receipt.'
+          );
+        }
       }
 
       // 3. Record payment
@@ -566,6 +577,16 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                   ? 'Our accounting team is verifying your payment submission. Once approved, you will receive an instant confirmation.'
                   : 'Your payment was processed successfully and the unit is now reserved.'}
               </p>
+
+              {proofWarning && (
+                <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-300 max-w-sm mx-auto text-left">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-[11px] font-bold text-amber-800">Payment proof not attached</p>
+                    <p className="text-[11px] text-amber-700 mt-0.5">{proofWarning}</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
