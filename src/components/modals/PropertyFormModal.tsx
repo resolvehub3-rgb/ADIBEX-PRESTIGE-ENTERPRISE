@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Building2, Upload, Plus, Trash2, CheckCircle2, Layers, Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Building2, Upload, Plus, Trash2, CheckCircle2, Layers, Sparkles, ImageIcon } from 'lucide-react';
 import {
   Property,
   PropertyType,
@@ -11,7 +11,14 @@ import {
   PROPERTY_TYPE_LABELS,
   COMMON_AMENITIES,
 } from '../../types';
-import { createProperty, updateProperty, uploadMediaFile, addPropertyMedia } from '../../lib/db';
+import {
+  createProperty,
+  updateProperty,
+  uploadMediaFile,
+  addPropertyMedia,
+  deleteInvalidPropertyMedia,
+} from '../../lib/db';
+import { usableMedia } from '../../lib/media';
 import { useAuth } from '../../context/AuthContext';
 
 interface PropertyFormModalProps {
@@ -78,8 +85,64 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
 
   // New photo upload
   const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [savedPhotos, setSavedPhotos] = useState<string[]>(() =>
+    usableMedia(propertyToEdit?.media).map((m) => m.url)
+  );
+  const [savedPropertyId, setSavedPropertyId] = useState<string | null>(propertyToEdit?.id || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+
+  // Re-sync the dialog with its target property whenever it opens, so an
+  // "Add Property" session never inherits (or updates) a previous listing.
+  const resetForm = () => {
+    setTitle(propertyToEdit?.title || '');
+    setPropertyType(propertyToEdit?.property_type || 'apartment');
+    setCategory(
+      propertyToEdit
+        ? PROPERTY_TYPE_LABELS[propertyToEdit.property_type]?.category || 'residential'
+        : 'residential'
+    );
+    setTransactionType(propertyToEdit?.transaction_type || 'RENT');
+    setPrice(propertyToEdit?.price?.toString() || '');
+    setCurrency(propertyToEdit?.currency || 'GHS');
+    setRentalFrequency(propertyToEdit?.rental_frequency || 'monthly');
+    setSecurityDeposit('');
+    setServiceCharge('');
+    setRegion(propertyToEdit?.region || 'Greater Accra');
+    setCity(propertyToEdit?.city || 'Accra');
+    setArea(propertyToEdit?.area || 'Airport Residential');
+    setAddress(propertyToEdit?.address || '');
+    setBedrooms(propertyToEdit?.bedrooms?.toString() || '2');
+    setBathrooms(propertyToEdit?.bathrooms?.toString() || '2');
+    setFloorArea(propertyToEdit?.floor_area_sqm?.toString() || '');
+    setLandSize(propertyToEdit?.land_size_sqm?.toString() || '');
+    setFurnishing(propertyToEdit?.furnished ? 'furnished' : 'unfurnished');
+    setDescription(propertyToEdit?.description || '');
+    setVirtualTourUrl('');
+    setSelectedAmenities(propertyToEdit?.amenities || []);
+    setUnits(
+      propertyToEdit?.units?.map((u) => ({
+        unit_name: u.unit_name,
+        unit_type: propertyToEdit.property_type,
+        floor_level: u.floor_level || '',
+        price: u.price,
+        status: u.status,
+      })) || []
+    );
+    setSavedPropertyId(propertyToEdit?.id || null);
+    setSavedPhotos(usableMedia(propertyToEdit?.media).map((m) => m.url));
+    setImageFiles([]);
+    setError(null);
+    setWarning(null);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    resetForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, propertyToEdit?.id]);
 
   if (!isOpen) return null;
 
@@ -143,34 +206,67 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
         is_archived: false,
       };
 
-      let propertyId = propertyToEdit?.id;
+      let propertyId = savedPropertyId || propertyToEdit?.id || null;
 
-      if (isEditing && propertyId) {
+      if (propertyId) {
         const res = await updateProperty(propertyId, propertyData, profile?.id);
         if (!res.success) throw new Error(res.error);
       } else {
         const res = await createProperty(propertyData, [], [], profile?.id);
         if (!res.success || !res.data) throw new Error(res.error);
         propertyId = res.data.id;
+        setSavedPropertyId(propertyId);
       }
 
       // Upload photos if any selected
+      const failedPhotos: string[] = [];
+      const mediaErrors: string[] = [];
+      const uploadedUrls: string[] = [];
+
       if (imageFiles.length > 0 && propertyId) {
+        const startingOrder = savedPhotos.length;
         for (let i = 0; i < imageFiles.length; i++) {
           const uploadRes = await uploadMediaFile(imageFiles[i], 'property-media');
-          if (uploadRes.url) {
-            await addPropertyMedia({
-              property_id: propertyId,
-              url: uploadRes.url,
-              is_primary: i === 0,
-              media_type: 'IMAGE',
-              sort_order: i,
-            });
+          if (!uploadRes.url) {
+            failedPhotos.push(imageFiles[i].name);
+            continue;
           }
+
+          const mediaRes = await addPropertyMedia({
+            property_id: propertyId,
+            url: uploadRes.url,
+            is_primary: startingOrder === 0 && i === 0,
+            media_type: 'IMAGE',
+            sort_order: startingOrder + i,
+          });
+
+          if (mediaRes.success) uploadedUrls.push(uploadRes.url);
+          else mediaErrors.push(mediaRes.error || 'unknown database error');
         }
+
+        // Self-heal: drop stale rows saved with an unloadable (blob:) URL
+        await deleteInvalidPropertyMedia(propertyId);
+      }
+
+      if (mediaErrors.length > 0) {
+        throw new Error(`Photos uploaded, but could not be saved: ${mediaErrors[0]}`);
       }
 
       onSuccess();
+
+      if (failedPhotos.length > 0) {
+        // Listing is saved; keep the dialog open so the warning is visible and
+        // the remaining photos can be picked again safely (no duplicate listing).
+        setSavedPhotos((prev) => [...prev, ...uploadedUrls]);
+        setImageFiles([]);
+        setWarning(
+          `${failedPhotos.length} photo(s) could not be processed (${failedPhotos.join(
+            ', '
+          )}). Your listing was saved — select those photos again to retry.`
+        );
+        return;
+      }
+
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to save property listing');
@@ -211,6 +307,12 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
           {error && (
             <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-medium">
               {error}
+            </div>
+          )}
+
+          {warning && !error && (
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-medium">
+              {warning}
             </div>
           )}
 
@@ -537,6 +639,31 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
               <Upload className="w-4 h-4 text-[#D4AF37]" />
               6. Photos & Virtual Tour
             </h4>
+
+            {savedPhotos.length > 0 && (
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Photos on this listing ({savedPhotos.length})
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {savedPhotos.map((src, idx) => (
+                    <div
+                      key={`saved-${idx}`}
+                      className="w-24 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-100"
+                    >
+                      <img
+                        src={src}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block font-semibold text-slate-700 mb-1">

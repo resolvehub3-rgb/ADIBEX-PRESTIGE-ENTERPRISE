@@ -28,6 +28,7 @@ import {
   fetchAllReservations,
   fetchAllPayments,
   fetchAllViewings,
+  getPropertyByIdOrSlug,
 } from './lib/db';
 
 const MainApplication: React.FC = () => {
@@ -159,6 +160,27 @@ const MainApplication: React.FC = () => {
       }
     }
   }, [properties.length]);
+
+  // List responses only carry each listing's cover photo, so pull the full
+  // gallery (plus fresh status/units) whenever a property detail is opened.
+  useEffect(() => {
+    const propertyId = selectedProperty?.id;
+    if (!propertyId) return;
+
+    let cancelled = false;
+    getPropertyByIdOrSlug(propertyId).then((full) => {
+      if (cancelled || !full) return;
+      setSelectedProperty((prev) => {
+        if (!prev || prev.id !== full.id) return prev;
+        const media = full.media && full.media.length > 0 ? full.media : prev.media;
+        return { ...prev, ...full, media };
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProperty?.id]);
 
   // Keep browser URL in sync with the current view/property for rich social sharing & search engine bots
   useEffect(() => {

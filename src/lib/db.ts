@@ -1,4 +1,6 @@
-import { getSupabase } from './supabase';
+import { getSupabase, getSupabaseCredentials } from './supabase';
+import { isAbsoluteHttpUrl, isDurableMediaUrl, compressImageToDataUrl } from './media';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Property,
   PropertyUnit,
@@ -130,6 +132,75 @@ export async function updateCompanySettings(
 }
 
 // ------------------------------------------------------------------------
+// MEDIA ATTACHMENT HELPERS
+// ------------------------------------------------------------------------
+const MEDIA_SELECT_COLUMNS =
+  'id, property_id, media_type, url, caption, sort_order, is_primary, created_at';
+
+/** Drops rows whose URL can never load again (e.g. stale blob: object URLs). */
+function filterUsableMedia(media?: PropertyMedia[] | null): PropertyMedia[] {
+  return (media || []).filter((m) => isDurableMediaUrl(m?.url));
+}
+
+/**
+ * List views only need one photo per listing, so instead of pulling every
+ * photo (which may be stored inline as a data URL) we attach the primary,
+ * otherwise the first usable, media row to each property on the page.
+ */
+async function attachCoverMedia(supabase: SupabaseClient, properties: Property[]): Promise<void> {
+  const reset = () => {
+    for (const property of properties) {
+      property.media = filterUsableMedia(property.media);
+    }
+  };
+
+  if (!properties || properties.length === 0) return;
+  const ids = properties.map((p) => p.id).filter(Boolean);
+  if (ids.length === 0) return;
+
+  try {
+    const { data: primaries } = await supabase
+      .from('property_media')
+      .select(MEDIA_SELECT_COLUMNS)
+      .in('property_id', ids)
+      .eq('is_primary', true)
+      .order('sort_order', { ascending: true });
+
+    const coverByProperty = new Map<string, PropertyMedia>();
+    for (const row of (primaries as PropertyMedia[]) || []) {
+      if (isDurableMediaUrl(row.url) && !coverByProperty.has(row.property_id)) {
+        coverByProperty.set(row.property_id, row);
+      }
+    }
+
+    // Listings whose primary photo is missing or unusable: fall back to any usable photo.
+    const missing = ids.filter((id) => !coverByProperty.has(id));
+    if (missing.length > 0) {
+      const { data: fallbacks } = await supabase
+        .from('property_media')
+        .select(MEDIA_SELECT_COLUMNS)
+        .in('property_id', missing)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+
+      for (const row of (fallbacks as PropertyMedia[]) || []) {
+        if (isDurableMediaUrl(row.url) && !coverByProperty.has(row.property_id)) {
+          coverByProperty.set(row.property_id, row);
+        }
+      }
+    }
+
+    for (const property of properties) {
+      const cover = coverByProperty.get(property.id);
+      property.media = cover ? [cover] : [];
+    }
+  } catch (err) {
+    // A thumbnail must never break the listing request itself.
+    reset();
+  }
+}
+
+// ------------------------------------------------------------------------
 // PROPERTIES
 // ------------------------------------------------------------------------
 export async function getProperties(
@@ -141,7 +212,7 @@ export async function getProperties(
     const supabase = getSupabase();
     let query = supabase
       .from('properties')
-      .select('*, units:property_units(*), media:property_media(*), agent:profiles!properties_assigned_agent_id_fkey(*)', { count: 'exact' })
+      .select('*, units:property_units(*), agent:profiles!properties_assigned_agent_id_fkey(*)', { count: 'exact' })
       .eq('is_archived', false);
 
     // If query from public, filter published/available
@@ -206,7 +277,10 @@ export async function getProperties(
 
     if (error) throw error;
 
-    return { properties: (data as Property[]) || [], total: count || 0 };
+    const properties = (data as Property[]) || [];
+    await attachCoverMedia(supabase, properties);
+
+    return { properties, total: count || 0 };
   } catch (err: any) {
     return { properties: [], total: 0, error: err.message };
   }
@@ -217,11 +291,14 @@ export async function getAllPropertiesForAdmin(): Promise<Property[]> {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from('properties')
-      .select('*, units:property_units(*), media:property_media(*), agent:profiles!properties_assigned_agent_id_fkey(*)')
+      .select('*, units:property_units(*), agent:profiles!properties_assigned_agent_id_fkey(*)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return (data as Property[]) || [];
+
+    const properties = (data as Property[]) || [];
+    await attachCoverMedia(supabase, properties);
+    return properties;
   } catch (err) {
     return [];
   }
@@ -244,7 +321,13 @@ export async function getPropertyByIdOrSlug(idOrSlug: string): Promise<Property 
 
     const { data, error } = await query.maybeSingle();
     if (error || !data) return null;
-    return data as Property;
+
+    const property = data as Property;
+    // Full gallery for the detail view, but never rows whose URL is dead on arrival.
+    property.media = filterUsableMedia(property.media).sort(
+      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    );
+    return property;
   } catch (err) {
     return null;
   }
@@ -454,29 +537,94 @@ export async function deletePropertyUnit(unitId: string): Promise<{ success: boo
 // ------------------------------------------------------------------------
 // MEDIA (Supabase Storage & Records)
 // ------------------------------------------------------------------------
+
+/** Payload budgets for images stored directly in the database as data URLs. */
+const INLINE_UPLOAD_LIMITS: Record<string, { maxEdge: number; quality: number; maxBase64Length: number }> = {
+  'property-media': { maxEdge: 1280, quality: 0.72, maxBase64Length: 220_000 },
+  'payment-proofs': { maxEdge: 1600, quality: 0.75, maxBase64Length: 600_000 },
+};
+
+function safeFileExtension(name?: string): string {
+  const ext = (name || '').split('.').pop() || '';
+  const clean = ext.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+  return clean ? `.${clean}` : '.jpg';
+}
+
+function randomObjectToken(length = 10): string {
+  const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return token.slice(0, Math.max(6, length));
+}
+
+/** Verifies a public storage URL really serves the object before we save it. */
+async function storageUrlIsReachable(url: string): Promise<boolean> {
+  if (typeof fetch !== 'function') return true;
+  try {
+    const res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+    if (res.status >= 400) return false;
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    return !contentType.includes('application/json');
+  } catch {
+    // CORS/network hiccups don't stop <img> from rendering, so assume OK.
+    return true;
+  }
+}
+
+/**
+ * Uploads a file to Supabase Storage when the bucket exists and is readable,
+ * otherwise stores a compressed, durable copy of the image inline.
+ *
+ * It NEVER returns a `blob:` URL: those die with the tab that created them,
+ * which is exactly how uploaded photos used to disappear after a reload.
+ */
 export async function uploadMediaFile(
   file: File,
   bucket: 'property-media' | 'payment-proofs' = 'property-media'
-): Promise<{ url: string | null; error?: string }> {
+): Promise<{ url: string | null; error?: string; source?: 'storage' | 'inline' }> {
+  let storageError: string | undefined;
+
   try {
-    const supabase = getSupabase();
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-    const filePath = `${fileName}`;
+    const { isConfigured } = getSupabaseCredentials();
 
-    const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file);
+    if (!isConfigured) {
+      storageError = 'Supabase storage is not configured';
+    } else {
+      const supabase = getSupabase();
+      const { data: bucketInfo, error: bucketError } = await supabase.storage.getBucket(bucket);
 
-    if (uploadError) {
-      // Fallback: create base64 object URL so client preview never blocks
-      const localUrl = URL.createObjectURL(file);
-      return { url: localUrl, error: uploadError.message };
+      if (bucketError) {
+        storageError = bucketError.message || `Storage bucket "${bucket}" is not available`;
+      } else if (bucketInfo && bucketInfo.public === false) {
+        storageError = `Storage bucket "${bucket}" is private, so its files cannot be displayed publicly`;
+      } else {
+        const objectPath = `${Date.now()}_${randomObjectToken()}${safeFileExtension(file.name)}`;
+        const { error: uploadError } = await supabase.storage
+          .from(bucket)
+          .upload(objectPath, file, { contentType: file.type || undefined, upsert: false });
+
+        if (uploadError) {
+          storageError = uploadError.message;
+        } else {
+          const { data: publicUrl } = supabase.storage.from(bucket).getPublicUrl(objectPath);
+          const candidate = publicUrl?.publicUrl;
+          if (isAbsoluteHttpUrl(candidate) && (await storageUrlIsReachable(candidate))) {
+            return { url: candidate, source: 'storage' };
+          }
+          storageError = `Uploaded file is not publicly readable in "${bucket}"`;
+        }
+      }
     }
-
-    const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
-    return { url: data.publicUrl };
   } catch (err: any) {
-    return { url: null, error: err.message };
+    storageError = err?.message || 'Supabase Storage is unreachable';
   }
+
+  // Storage unavailable → keep the photo working with an inline durable copy.
+  const limits = INLINE_UPLOAD_LIMITS[bucket] || INLINE_UPLOAD_LIMITS['property-media'];
+  const inlineUrl = await compressImageToDataUrl(file, limits);
+  if (inlineUrl) {
+    return { url: inlineUrl, source: 'inline', error: storageError };
+  }
+
+  return { url: null, error: storageError || `"${file.name}" could not be processed as an image` };
 }
 
 export async function addPropertyMedia(
@@ -489,6 +637,39 @@ export async function addPropertyMedia(
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Self-healing: removes media rows saved with an ephemeral/invalid URL
+ * (stale blob: links from earlier failed uploads) for a given property.
+ * Returns how many rows were removed. Never throws.
+ */
+export async function deleteInvalidPropertyMedia(propertyId: string): Promise<number> {
+  if (!propertyId) return 0;
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('property_media')
+      .select('id, url')
+      .eq('property_id', propertyId);
+
+    if (error) return 0;
+
+    const invalidIds = ((data as { id: string; url: string }[]) || [])
+      .filter((row) => !isDurableMediaUrl(row.url))
+      .map((row) => row.id);
+
+    if (invalidIds.length === 0) return 0;
+
+    const { error: deleteError } = await supabase
+      .from('property_media')
+      .delete()
+      .in('id', invalidIds);
+
+    return deleteError ? 0 : invalidIds.length;
+  } catch {
+    return 0;
   }
 }
 

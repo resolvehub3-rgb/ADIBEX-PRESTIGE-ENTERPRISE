@@ -1,4 +1,5 @@
 import { Property, CompanySettings } from '../types';
+import { isAbsoluteHttpUrl, usableMedia, primaryMedia as findPrimaryMedia } from '../lib/media';
 
 export interface SEOMetadata {
   title: string;
@@ -182,9 +183,15 @@ export function buildPropertySEOMetadata(
     property.transaction_type,
   ].join(', ');
 
-  // Primary image (falls back to the brand logo so shared links always preview correctly)
-  const primaryMedia = property.media?.find((m) => m.is_primary) || property.media?.[0];
-  const ogImage = primaryMedia?.url || `${base}/logo.png`;
+  // Primary image (falls back to the brand logo so shared links always preview
+  // correctly). Crawlers can only fetch absolute http(s) URLs, so inline data
+  // URLs and dead blob: URLs are never emitted as og:image.
+  const crawlableImages = usableMedia(property.media)
+    .filter((m) => m.media_type === 'IMAGE')
+    .map((m) => m.url)
+    .filter((url) => isAbsoluteHttpUrl(url));
+  const coverUrl = findPrimaryMedia(property.media)?.url;
+  const ogImage = isAbsoluteHttpUrl(coverUrl) ? coverUrl! : `${base}/logo.png`;
 
   // Schema.org RealEstateListing + Specific Accommodation/Land/Residence type
   const specificType = getSchemaPropertyType(property.property_type);
@@ -197,7 +204,7 @@ export function buildPropertySEOMetadata(
       name: property.title,
       description: property.description || description,
       url: canonicalUrl,
-      image: property.media?.map((m) => m.url) || [ogImage],
+      image: crawlableImages.length > 0 ? crawlableImages : [ogImage],
       datePosted: property.created_at || new Date().toISOString(),
       offers: {
         '@type': 'Offer',

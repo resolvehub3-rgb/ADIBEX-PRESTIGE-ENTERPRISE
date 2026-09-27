@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Property, CurrencyCode, PROPERTY_TYPE_LABELS } from '../../types';
 import { formatCurrency } from '../../lib/db';
+import { primaryMedia } from '../../lib/media';
 
 interface PropertyCardProps {
   property: Property;
@@ -30,9 +31,14 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
   onSelect,
   onReserveClick,
 }) => {
-  // Find primary image or first media image
-  const primaryMedia = property.media?.find((m) => m.is_primary) || property.media?.[0];
-  const imageUrl = primaryMedia?.url || null;
+  // Cover photo: primary image or first usable media row (never a dead URL)
+  const cover = primaryMedia(property.media);
+  const imageUrl = cover?.url || null;
+
+  // If a URL still fails to load at runtime, fall back to the branded
+  // placeholder instead of showing a broken image.
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
+  const showImage = Boolean(imageUrl) && failedSrc !== imageUrl;
 
   const typeInfo = PROPERTY_TYPE_LABELS[property.property_type] || {
     label: property.property_type,
@@ -82,12 +88,13 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
     <div className="group bg-white rounded-2xl border border-slate-200/80 hover:border-[#D4AF37]/60 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden">
       {/* Property Image Container */}
       <div className="relative aspect-16/10 overflow-hidden bg-slate-100 cursor-pointer" onClick={() => onSelect(property)}>
-        {imageUrl ? (
+        {showImage ? (
           <img
-            src={imageUrl}
+            src={imageUrl as string}
             alt={property.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             loading="lazy"
+            onError={() => setFailedSrc(imageUrl as string)}
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#2A0845]/10 to-[#D4AF37]/15 text-[#2A0845] p-4 text-center">

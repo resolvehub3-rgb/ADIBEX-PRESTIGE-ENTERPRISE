@@ -55,6 +55,7 @@ import {
   fetchStaffProfiles,
   updateUserRole,
 } from '../../lib/db';
+import { primaryMedia } from '../../lib/media';
 import { PropertyFormModal } from '../modals/PropertyFormModal';
 import {
   DashboardStatsSkeleton,
@@ -963,20 +964,40 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           <tr key={prop.id} className="hover:bg-purple-50/30 transition-colors group">
                             <td className="py-4 px-5">
                               <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white font-bold text-[10px] ${
-                                  idx % 4 === 0 ? 'bg-gradient-to-br from-purple-500 to-purple-700' :
-                                  idx % 4 === 1 ? 'bg-gradient-to-br from-amber-500 to-amber-700' :
-                                  idx % 4 === 2 ? 'bg-gradient-to-br from-emerald-500 to-emerald-700' :
-                                  'bg-gradient-to-br from-sky-500 to-sky-700'
-                                }`}>
-                                  {(prop.property_type === 'luxury_home' || prop.property_type === 'townhouse' || prop.property_type === 'villa') ? '🏠' :
-                                   (prop.property_type === 'flat' || prop.property_type === 'commercial_building') ? '🏢' :
-                                   (prop.property_type.includes('land')) ? '🌍' :
-                                   prop.property_type === 'office' ? '💼' :
-                                   prop.property_type === 'store_shop' ? '🏪' :
-                                   prop.property_type === 'warehouse' ? '🏭' :
-                                   '🛏️'}
-                                </div>
+                                {(() => {
+                                  const cover = primaryMedia(prop.media);
+                                  if (cover) {
+                                    return (
+                                      <img
+                                        src={cover.url}
+                                        alt={prop.title}
+                                        loading="lazy"
+                                        className="w-10 h-10 rounded-xl shrink-0 object-cover border border-slate-200 bg-slate-100"
+                                        onError={(e) => {
+                                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                        }}
+                                      />
+                                    );
+                                  }
+                                  return (
+                                    <div
+                                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white font-bold text-[10px] ${
+                                        idx % 4 === 0 ? 'bg-gradient-to-br from-purple-500 to-purple-700' :
+                                        idx % 4 === 1 ? 'bg-gradient-to-br from-amber-500 to-amber-700' :
+                                        idx % 4 === 2 ? 'bg-gradient-to-br from-emerald-500 to-emerald-700' :
+                                        'bg-gradient-to-br from-sky-500 to-sky-700'
+                                      }`}
+                                    >
+                                      {(prop.property_type === 'luxury_home' || prop.property_type === 'townhouse' || prop.property_type === 'villa') ? '🏠' :
+                                       (prop.property_type === 'flat' || prop.property_type === 'commercial_building') ? '🏢' :
+                                       (prop.property_type.includes('land')) ? '🌍' :
+                                       prop.property_type === 'office' ? '💼' :
+                                       prop.property_type === 'store_shop' ? '🏪' :
+                                       prop.property_type === 'warehouse' ? '🏭' :
+                                       '🛏️'}
+                                    </div>
+                                  );
+                                })()}
                                 <div className="min-w-0">
                                   <div className="font-bold text-slate-900 truncate max-w-[200px]">{prop.title}</div>
                                   <span className="font-mono text-[10px] text-purple-600 font-semibold">REF: {prop.reference_no}</span>

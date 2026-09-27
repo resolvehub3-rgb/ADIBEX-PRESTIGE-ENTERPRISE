@@ -21,9 +21,11 @@ import {
   ExternalLink,
   ChevronRight,
   Info,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Property, PropertyUnit, CurrencyCode, CompanySettings, UserProfile } from '../../types';
 import { formatCurrency } from '../../lib/db';
+import { usableMedia } from '../../lib/media';
 import { ReservationModal } from '../modals/ReservationModal';
 import { ViewingRequestModal } from '../modals/ViewingRequestModal';
 
@@ -53,10 +55,18 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
   const [reservationModalOpen, setReservationModalOpen] = useState(false);
   const [viewingModalOpen, setViewingModalOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  // URLs that failed to load in this session -> show a placeholder instead
+  const [brokenSrcs, setBrokenSrcs] = useState<string[]>([]);
 
-  const images = property.media?.filter((m) => m.media_type === 'IMAGE') || [];
-  const videos = property.media?.filter((m) => m.media_type === 'VIDEO') || [];
-  const activeMedia = images[activeImageIndex] || null;
+  const markBroken = (url: string) => {
+    setBrokenSrcs((prev) => (prev.includes(url) ? prev : [...prev, url]));
+  };
+  const isRenderable = (url?: string | null) => Boolean(url) && !brokenSrcs.includes(url as string);
+
+  const allMedia = usableMedia(property.media);
+  const images = allMedia.filter((m) => m.media_type === 'IMAGE');
+  const videos = allMedia.filter((m) => m.media_type === 'VIDEO');
+  const activeMedia = images[activeImageIndex] || images[0] || null;
 
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/?property=${encodeURIComponent(property.slug || property.id)}`;
@@ -134,11 +144,12 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
             {/* Gallery Section */}
             <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/80 shadow-xs">
               <div className="relative aspect-16/9 bg-slate-900 overflow-hidden">
-                {activeMedia?.url ? (
+                {activeMedia && isRenderable(activeMedia.url) ? (
                   <img
                     src={activeMedia.url}
                     alt={property.title}
                     className="w-full h-full object-cover"
+                    onError={() => markBroken(activeMedia.url)}
                   />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
@@ -165,7 +176,9 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
                 </div>
 
                 <div className="absolute bottom-4 right-4 px-3 py-1 rounded-lg bg-black/70 text-white text-xs font-medium backdrop-blur-xs">
-                  {images.length > 0 ? `${activeImageIndex + 1} / ${images.length} Photos` : 'Photo Preview'}
+                  {activeMedia && images.length > 0
+                    ? `${images.indexOf(activeMedia) + 1} / ${images.length} Photos`
+                    : 'Photo Preview'}
                 </div>
               </div>
 
@@ -182,7 +195,18 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
                           : 'border-transparent opacity-70 hover:opacity-100'
                       }`}
                     >
-                      <img src={img.url} alt="" className="w-full h-full object-cover" />
+                      {isRenderable(img.url) ? (
+                        <img
+                          src={img.url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={() => markBroken(img.url)}
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-400">
+                          <ImageIcon className="w-5 h-5" />
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>

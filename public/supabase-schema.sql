@@ -526,9 +526,63 @@ CREATE TRIGGER update_reservations_updated_at
   FOR EACH ROW EXECUTE PROCEDURE public.update_updated_at_column();
 
 -- ========================================================================
--- STORAGE BUCKET POLICIES (Supabase Storage)
--- Buckets: 'property-media', 'payment-proofs'
+-- STORAGE BUCKETS & POLICIES (Supabase Storage)
+-- Buckets: 'property-media' (public), 'payment-proofs' (private)
+--
+-- The upload flow checks for these buckets before using Storage. While they
+-- are missing, photos still work: the app stores a compressed, durable copy
+-- of the image inline (a data URL) in public.property_media.url instead of a
+-- blob: URL that dies on page reload. Run this block to switch uploads over
+-- to real object storage. Safe to re-run.
 -- ========================================================================
--- Run these via Supabase dashboard or SQL:
--- INSERT INTO storage.buckets (id, name, public) VALUES ('property-media', 'property-media', true) ON CONFLICT DO NOTHING;
--- INSERT INTO storage.buckets (id, name, public) VALUES ('payment-proofs', 'payment-proofs', false) ON CONFLICT DO NOTHING;
+INSERT INTO storage.buckets (id, name, public)
+VALUES
+  ('property-media', 'property-media', true),
+  ('payment-proofs', 'payment-proofs', false)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
+
+-- Optional hardening (uncomment if your project supports these columns):
+-- UPDATE storage.buckets SET file_size_limit = 10485760 WHERE id IN ('property-media', 'payment-proofs');
+
+-- Public read access for property photos and videos
+DROP POLICY IF EXISTS "Public read property media objects" ON storage.objects;
+CREATE POLICY "Public read property media objects" ON storage.objects
+  FOR SELECT USING (bucket_id = 'property-media');
+
+-- Company owner / admin manages every media bucket
+DROP POLICY IF EXISTS "Owner manages media objects" ON storage.objects;
+CREATE POLICY "Owner manages media objects" ON storage.objects
+  FOR ALL TO authenticated
+  USING (
+    bucket_id IN ('property-media', 'payment-proofs')
+    AND public.get_auth_role() = 'company_owner_admin'
+  )
+  WITH CHECK (
+    bucket_id IN ('property-media', 'payment-proofs')
+    AND public.get_auth_role() = 'company_owner_admin'
+  );
+
+-- Agents may manage media for property listings
+DROP POLICY IF EXISTS "Agents manage property media objects" ON storage.objects;
+CREATE POLICY "Agents manage property media objects" ON storage.objects
+  FOR ALL TO authenticated
+  USING (
+    bucket_id = 'property-media'
+    AND public.get_auth_role() = 'agent'
+    AND auth.uid() IS NOT NULL
+  )
+  WITH CHECK (
+    bucket_id = 'property-media'
+    AND public.get_auth_role() = 'agent'
+    AND auth.uid() IS NOT NULL
+  );
+
+-- Authenticated customers may attach payment proof screenshots
+DROP POLICY IF EXISTS "Customers upload payment proofs" ON storage.objects;
+CREATE POLICY "Customers upload payment proofs" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'payment-proofs' AND auth.uid() IS NOT NULL);
+
+-- NOTE: if INSERT INTO storage.buckets is rejected by your project, create
+-- the two buckets manually in Dashboard > Storage (make 'property-media'
+-- public) and then re-run only the policy statements above.

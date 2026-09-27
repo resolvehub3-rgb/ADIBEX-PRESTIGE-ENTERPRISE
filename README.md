@@ -143,8 +143,18 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
    - Tables: `profiles`, `properties`, `property_units`, `property_media`, `reservations`, `payments`, `viewing_appointments`, `company_settings`, `audit_logs`.
    - Security: Complete Row Level Security (RLS) policies for Owner, Agent, and Customer roles.
    - Triggers: Automatic profile creation upon user sign-up.
+   - Storage: the `property-media` (public) and `payment-proofs` (private) buckets plus their `storage.objects` policies.
 
-### 4. Install Dependencies & Run
+### 4. Property Photo Storage
+Photos uploaded from the listing form are resolved in this order, so a picture **always** has a URL that survives a page reload:
+
+1. **Supabase Storage** — used when the `property-media` bucket exists, is public, and the uploaded object is publicly readable (the URL is verified before it is saved).
+2. **Inline database copy** — if Storage is unavailable (bucket missing / RLS blocked), the image is re-encoded to a bounded JPEG data URL (max edge 1280px, ~220 KB) and stored in `public.property_media.url`. Nothing is ever written to the database as a `blob:` URL, because those die with the tab that created them.
+3. **Branded placeholder** — if a URL still fails to load at render time, cards, the gallery, and admin thumbnails fall back to the placeholder instead of a broken image icon.
+
+> Existing listings that were saved while Storage was unavailable contain dead `blob:` links (they can never be recovered — the file only ever existed in the browser). They are filtered out of every view, and re-uploading the photos from **Edit Listing** replaces them; saving a listing also cleans up any invalid media rows automatically.
+
+### 5. Install Dependencies & Run
 ```bash
 pnpm install
 pnpm dev
