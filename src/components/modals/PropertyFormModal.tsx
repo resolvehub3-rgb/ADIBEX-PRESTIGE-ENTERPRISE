@@ -19,7 +19,7 @@ import {
   deleteInvalidPropertyMedia,
 } from '../../lib/db';
 import { usableMedia, isVideoMedia, isAbsoluteHttpUrl } from '../../lib/media';
-import { getSupabase, getSupabaseCredentials } from '../../lib/supabase';
+
 import { useAuth } from '../../context/AuthContext';
 
 interface PropertyFormModalProps {
@@ -100,9 +100,6 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-  // null = still checking, false = the public "property-media" bucket is missing
-  const [storageReady, setStorageReady] = useState<boolean | null>(null);
-  const [schemaCopied, setSchemaCopied] = useState(false);
 
   // Re-sync the dialog with its target property whenever it opens, so an
   // "Add Property" session never inherits (or updates) a previous listing.
@@ -155,45 +152,6 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
     resetForm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, propertyToEdit?.id]);
-
-  // Photos fall back to an inline database copy when Storage is missing, but a
-  // video is far too large for that — so tell the admin up-front, while they
-  // are still in the upload screen, instead of after a failed save.
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-    setStorageReady(null);
-
-    (async () => {
-      try {
-        const { isConfigured } = getSupabaseCredentials();
-        if (!isConfigured) {
-          if (!cancelled) setStorageReady(false);
-          return;
-        }
-        const { error: bucketError } = await getSupabase().storage.getBucket('property-media');
-        if (!cancelled) setStorageReady(!bucketError);
-      } catch {
-        if (!cancelled) setStorageReady(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen]);
-
-  const handleCopySchema = async () => {
-    try {
-      const res = await fetch('/supabase-schema.sql');
-      const text = await res.text();
-      await navigator.clipboard.writeText(text);
-      setSchemaCopied(true);
-      setTimeout(() => setSchemaCopied(false), 3000);
-    } catch {
-      setWarning('Copy failed — open public/supabase-schema.sql in the project and copy it manually.');
-    }
-  };
 
   if (!isOpen) return null;
 
@@ -805,25 +763,7 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
               </div>
             )}
 
-            {storageReady === false && (
-              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
-                <p className="text-amber-900 font-semibold text-xs">
-                  Supabase Storage is not set up yet (bucket “property-media” is missing).
-                </p>
-                <p className="text-amber-800 text-[11px] leading-relaxed">
-                  Photos will still be saved as a compressed inline copy, but{' '}
-                  <strong>videos cannot be uploaded until Storage exists</strong>. Run the SQL schema once:
-                  copy it below, paste it into the Supabase SQL Editor and press Run.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleCopySchema}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[11px] font-bold hover:bg-amber-700 transition-colors cursor-pointer"
-                >
-                  {schemaCopied ? 'SQL Copied — paste it in Supabase' : 'Copy Full SQL Schema'}
-                </button>
-              </div>
-            )}
+
 
             <div>
               <label className="block font-semibold text-slate-700 mb-1">
