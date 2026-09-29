@@ -109,6 +109,10 @@ CREATE TABLE IF NOT EXISTS public.properties (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 360° virtual tour / video walkthrough link shown on the public listing page.
+-- Separate ALTER so re-running this file on an existing database is safe.
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS virtual_tour_url TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_properties_status ON public.properties(status);
 CREATE INDEX IF NOT EXISTS idx_properties_transaction_type ON public.properties(transaction_type);
 CREATE INDEX IF NOT EXISTS idx_properties_property_type ON public.properties(property_type);
@@ -342,43 +346,54 @@ RETURNS TEXT AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- PROFILES
+DROP POLICY IF EXISTS "Public can view minimal agent profile" ON public.profiles;
 CREATE POLICY "Public can view minimal agent profile" ON public.profiles
   FOR SELECT USING (role = 'agent' OR id = auth.uid());
 
+DROP POLICY IF EXISTS "Owner has full access to profiles" ON public.profiles;
 CREATE POLICY "Owner has full access to profiles" ON public.profiles
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
+DROP POLICY IF EXISTS "Users can view and update their own profile" ON public.profiles;
 CREATE POLICY "Users can view and update their own profile" ON public.profiles
   FOR ALL USING (id = auth.uid());
 
 -- COMPANY SETTINGS
+DROP POLICY IF EXISTS "Public can view company settings" ON public.company_settings;
 CREATE POLICY "Public can view company settings" ON public.company_settings
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Owner can update company settings" ON public.company_settings;
 CREATE POLICY "Owner can update company settings" ON public.company_settings
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
 -- PROPERTIES
+DROP POLICY IF EXISTS "Public can view published unarchived properties" ON public.properties;
 CREATE POLICY "Public can view published unarchived properties" ON public.properties
   FOR SELECT USING (status IN ('PUBLISHED', 'AVAILABLE', 'RESERVED', 'RENTED', 'SOLD') AND is_archived = false);
 
+DROP POLICY IF EXISTS "Owner has full access to properties" ON public.properties;
 CREATE POLICY "Owner has full access to properties" ON public.properties
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
+DROP POLICY IF EXISTS "Agents can view and edit assigned properties" ON public.properties;
 CREATE POLICY "Agents can view and edit assigned properties" ON public.properties
   FOR ALL USING (
     public.get_auth_role() = 'agent' AND (assigned_agent_id = auth.uid() OR created_by = auth.uid())
   );
 
 -- PROPERTY UNITS
+DROP POLICY IF EXISTS "Public can view units of active properties" ON public.property_units;
 CREATE POLICY "Public can view units of active properties" ON public.property_units
   FOR SELECT USING (
     EXISTS (SELECT 1 FROM public.properties p WHERE p.id = property_units.property_id AND p.is_archived = false)
   );
 
+DROP POLICY IF EXISTS "Owner has full access to units" ON public.property_units;
 CREATE POLICY "Owner has full access to units" ON public.property_units
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
+DROP POLICY IF EXISTS "Agents can manage units of assigned properties" ON public.property_units;
 CREATE POLICY "Agents can manage units of assigned properties" ON public.property_units
   FOR ALL USING (
     public.get_auth_role() = 'agent' AND EXISTS (
@@ -388,12 +403,15 @@ CREATE POLICY "Agents can manage units of assigned properties" ON public.propert
   );
 
 -- PROPERTY MEDIA
+DROP POLICY IF EXISTS "Public can view property media" ON public.property_media;
 CREATE POLICY "Public can view property media" ON public.property_media
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Owner can manage media" ON public.property_media;
 CREATE POLICY "Owner can manage media" ON public.property_media
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
+DROP POLICY IF EXISTS "Agents can manage media for assigned properties" ON public.property_media;
 CREATE POLICY "Agents can manage media for assigned properties" ON public.property_media
   FOR ALL USING (
     public.get_auth_role() = 'agent' AND EXISTS (
@@ -403,19 +421,24 @@ CREATE POLICY "Agents can manage media for assigned properties" ON public.proper
   );
 
 -- FAVORITES
+DROP POLICY IF EXISTS "Customers can manage their own favorites" ON public.property_favorites;
 CREATE POLICY "Customers can manage their own favorites" ON public.property_favorites
   FOR ALL USING (user_id = auth.uid());
 
 -- RESERVATIONS
+DROP POLICY IF EXISTS "Customers can view their own reservations" ON public.reservations;
 CREATE POLICY "Customers can view their own reservations" ON public.reservations
   FOR SELECT USING (customer_id = auth.uid());
 
+DROP POLICY IF EXISTS "Customers can create reservations" ON public.reservations;
 CREATE POLICY "Customers can create reservations" ON public.reservations
   FOR INSERT WITH CHECK (customer_id = auth.uid());
 
+DROP POLICY IF EXISTS "Owner has full access to reservations" ON public.reservations;
 CREATE POLICY "Owner has full access to reservations" ON public.reservations
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
+DROP POLICY IF EXISTS "Agents can view reservations for assigned properties" ON public.reservations;
 CREATE POLICY "Agents can view reservations for assigned properties" ON public.reservations
   FOR SELECT USING (
     public.get_auth_role() = 'agent' AND EXISTS (
@@ -425,50 +448,63 @@ CREATE POLICY "Agents can view reservations for assigned properties" ON public.r
   );
 
 -- PAYMENTS
+DROP POLICY IF EXISTS "Customers can view their own payments" ON public.payments;
 CREATE POLICY "Customers can view their own payments" ON public.payments
   FOR SELECT USING (customer_id = auth.uid());
 
+DROP POLICY IF EXISTS "Customers can submit payments" ON public.payments;
 CREATE POLICY "Customers can submit payments" ON public.payments
   FOR INSERT WITH CHECK (customer_id = auth.uid());
 
+DROP POLICY IF EXISTS "Owner has full access to payments" ON public.payments;
 CREATE POLICY "Owner has full access to payments" ON public.payments
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
 -- VIEWING APPOINTMENTS
+DROP POLICY IF EXISTS "Customers can view and create their appointments" ON public.viewing_appointments;
 CREATE POLICY "Customers can view and create their appointments" ON public.viewing_appointments
   FOR ALL USING (customer_id = auth.uid());
 
+DROP POLICY IF EXISTS "Owner has full access to viewing appointments" ON public.viewing_appointments;
 CREATE POLICY "Owner has full access to viewing appointments" ON public.viewing_appointments
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
+DROP POLICY IF EXISTS "Agents can view and manage assigned viewing appointments" ON public.viewing_appointments;
 CREATE POLICY "Agents can view and manage assigned viewing appointments" ON public.viewing_appointments
   FOR ALL USING (
     public.get_auth_role() = 'agent' AND assigned_agent_id = auth.uid()
   );
 
 -- INQUIRIES
+DROP POLICY IF EXISTS "Customers can create inquiries" ON public.property_inquiries;
 CREATE POLICY "Customers can create inquiries" ON public.property_inquiries
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Customers can view their own inquiries" ON public.property_inquiries;
 CREATE POLICY "Customers can view their own inquiries" ON public.property_inquiries
   FOR SELECT USING (customer_id = auth.uid());
 
+DROP POLICY IF EXISTS "Owner has full access to inquiries" ON public.property_inquiries;
 CREATE POLICY "Owner has full access to inquiries" ON public.property_inquiries
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
+DROP POLICY IF EXISTS "Agents can view assigned inquiries" ON public.property_inquiries;
 CREATE POLICY "Agents can view assigned inquiries" ON public.property_inquiries
   FOR ALL USING (
     public.get_auth_role() = 'agent' AND assigned_agent_id = auth.uid()
   );
 
 -- NOTIFICATIONS
+DROP POLICY IF EXISTS "Users can manage their own notifications" ON public.notifications;
 CREATE POLICY "Users can manage their own notifications" ON public.notifications
   FOR ALL USING (user_id = auth.uid());
 
 -- AUDIT LOGS
+DROP POLICY IF EXISTS "Owner can view audit logs" ON public.audit_logs;
 CREATE POLICY "Owner can view audit logs" ON public.audit_logs
   FOR SELECT USING (public.get_auth_role() = 'company_owner_admin');
 
+DROP POLICY IF EXISTS "Authenticated users can insert audit logs" ON public.audit_logs;
 CREATE POLICY "Authenticated users can insert audit logs" ON public.audit_logs
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
@@ -526,6 +562,32 @@ CREATE TRIGGER update_reservations_updated_at
   FOR EACH ROW EXECUTE PROCEDURE public.update_updated_at_column();
 
 -- ========================================================================
+-- REALTIME (Supabase Realtime)
+-- Lets every open tab pick up new/edited listings and freshly uploaded
+-- photos & videos without a hard refresh. Safe to re-run.
+-- ========================================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'properties'
+    ) THEN
+      EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.properties';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'property_media'
+    ) THEN
+      EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.property_media';
+    END IF;
+  END IF;
+EXCEPTION WHEN others THEN
+  RAISE NOTICE 'Realtime publication update skipped: %', SQLERRM;
+END $$;
+
+-- ========================================================================
 -- STORAGE BUCKETS & POLICIES (Supabase Storage)
 -- Buckets: 'property-media' (public), 'payment-proofs' (private)
 --
@@ -534,6 +596,10 @@ CREATE TRIGGER update_reservations_updated_at
 -- of the image inline (a data URL) in public.property_media.url instead of a
 -- blob: URL that dies on page reload. Run this block to switch uploads over
 -- to real object storage. Safe to re-run.
+--
+-- IMPORTANT: videos cannot be stored inline (they are far too large for a
+-- database row), so this block MUST be run before uploading a video
+-- walkthrough, otherwise the upload is rejected with a clear error.
 -- ========================================================================
 INSERT INTO storage.buckets (id, name, public)
 VALUES
@@ -543,6 +609,24 @@ ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
 
 -- Optional hardening (uncomment if your project supports these columns):
 -- UPDATE storage.buckets SET file_size_limit = 10485760 WHERE id IN ('property-media', 'payment-proofs');
+
+-- Video walkthroughs need headroom (100 MB public bucket / 10 MB proofs).
+-- Kept in a DO block so projects whose storage.buckets lacks these columns
+-- still run the rest of this script instead of failing on one statement.
+DO $$
+BEGIN
+  UPDATE storage.buckets SET file_size_limit = 104857600 WHERE id = 'property-media';
+  UPDATE storage.buckets SET file_size_limit = 10485760  WHERE id = 'payment-proofs';
+EXCEPTION WHEN undefined_column THEN
+  RAISE NOTICE 'storage.buckets.file_size_limit is not available in this project - keeping defaults.';
+END $$;
+
+-- Lets the signed-in company owner re-create a missing bucket from the app
+-- (Storage API) instead of failing every upload until this file runs.
+DROP POLICY IF EXISTS "Owner creates storage buckets" ON storage.buckets;
+CREATE POLICY "Owner creates storage buckets" ON storage.buckets
+  FOR INSERT TO authenticated
+  WITH CHECK (public.get_auth_role() = 'company_owner_admin');
 
 -- Public read access for property photos and videos
 DROP POLICY IF EXISTS "Public read property media objects" ON storage.objects;

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Building2, Upload, Plus, Trash2, CheckCircle2, Layers, Sparkles, ImageIcon } from 'lucide-react';
+import { X, Building2, Upload, Plus, Trash2, CheckCircle2, Layers, Sparkles, ImageIcon, Film } from 'lucide-react';
 import {
   Property,
   PropertyType,
@@ -18,7 +18,8 @@ import {
   addPropertyMedia,
   deleteInvalidPropertyMedia,
 } from '../../lib/db';
-import { usableMedia } from '../../lib/media';
+import { usableMedia, isVideoMedia, isAbsoluteHttpUrl } from '../../lib/media';
+import { getSupabase, getSupabaseCredentials } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 
 interface PropertyFormModalProps {
@@ -27,6 +28,14 @@ interface PropertyFormModalProps {
   propertyToEdit?: Property | null;
   onSuccess: () => void;
 }
+
+type SavedMediaRow = { url: string; media_type: 'IMAGE' | 'VIDEO' };
+
+const toSavedRows = (media?: Property['media']): SavedMediaRow[] =>
+  usableMedia(media).map((m) => ({
+    url: m.url,
+    media_type: isVideoMedia(m) ? 'VIDEO' : 'IMAGE',
+  }));
 
 export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
   isOpen,
@@ -65,7 +74,7 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
     propertyToEdit?.furnished ? 'furnished' : 'unfurnished'
   );
   const [description, setDescription] = useState(propertyToEdit?.description || '');
-  const [virtualTourUrl, setVirtualTourUrl] = useState('');
+  const [virtualTourUrl, setVirtualTourUrl] = useState(propertyToEdit?.virtual_tour_url || '');
 
   // Amenities
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>(propertyToEdit?.amenities || []);
@@ -83,15 +92,17 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
     })) || []
   );
 
-  // New photo upload
+  // New photo / video uploads
   const [imageFiles, setImageFiles] = useState<File[]>([]);
-  const [savedPhotos, setSavedPhotos] = useState<string[]>(() =>
-    usableMedia(propertyToEdit?.media).map((m) => m.url)
-  );
+  const [videoFiles, setVideoFiles] = useState<File[]>([]);
+  const [savedMedia, setSavedMedia] = useState<SavedMediaRow[]>(() => toSavedRows(propertyToEdit?.media));
   const [savedPropertyId, setSavedPropertyId] = useState<string | null>(propertyToEdit?.id || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  // null = still checking, false = the public "property-media" bucket is missing
+  const [storageReady, setStorageReady] = useState<boolean | null>(null);
+  const [schemaCopied, setSchemaCopied] = useState(false);
 
   // Re-sync the dialog with its target property whenever it opens, so an
   // "Add Property" session never inherits (or updates) a previous listing.
@@ -119,7 +130,7 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
     setLandSize(propertyToEdit?.land_size_sqm?.toString() || '');
     setFurnishing(propertyToEdit?.furnished ? 'furnished' : 'unfurnished');
     setDescription(propertyToEdit?.description || '');
-    setVirtualTourUrl('');
+    setVirtualTourUrl(propertyToEdit?.virtual_tour_url || '');
     setSelectedAmenities(propertyToEdit?.amenities || []);
     setUnits(
       propertyToEdit?.units?.map((u) => ({
@@ -131,8 +142,9 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
       })) || []
     );
     setSavedPropertyId(propertyToEdit?.id || null);
-    setSavedPhotos(usableMedia(propertyToEdit?.media).map((m) => m.url));
+    setSavedMedia(toSavedRows(propertyToEdit?.media));
     setImageFiles([]);
+    setVideoFiles([]);
     setError(null);
     setWarning(null);
     setLoading(false);
@@ -143,6 +155,45 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
     resetForm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, propertyToEdit?.id]);
+
+  // Photos fall back to an inline database copy when Storage is missing, but a
+  // video is far too large for that — so tell the admin up-front, while they
+  // are still in the upload screen, instead of after a failed save.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    setStorageReady(null);
+
+    (async () => {
+      try {
+        const { isConfigured } = getSupabaseCredentials();
+        if (!isConfigured) {
+          if (!cancelled) setStorageReady(false);
+          return;
+        }
+        const { error: bucketError } = await getSupabase().storage.getBucket('property-media');
+        if (!cancelled) setStorageReady(!bucketError);
+      } catch {
+        if (!cancelled) setStorageReady(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  const handleCopySchema = async () => {
+    try {
+      const res = await fetch('/supabase-schema.sql');
+      const text = await res.text();
+      await navigator.clipboard.writeText(text);
+      setSchemaCopied(true);
+      setTimeout(() => setSchemaCopied(false), 3000);
+    } catch {
+      setWarning('Copy failed — open public/supabase-schema.sql in the project and copy it manually.');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -174,9 +225,15 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setWarning(null);
     setLoading(true);
 
     try {
+      const tourUrl = virtualTourUrl.trim();
+      if (tourUrl && !isAbsoluteHttpUrl(tourUrl)) {
+        throw new Error('The 360° tour / video link must be a full URL, e.g. https://…');
+      }
+
       const propertyData: Partial<Property> = {
         title: title.trim(),
         property_type: propertyType,
@@ -204,44 +261,98 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
         is_featured: false,
         is_verified: true,
         is_archived: false,
+        // Only sent when there is a value to write (or an old one to clear), so a
+        // database that hasn't run the virtual_tour_url migration yet is never
+        // hit with an unknown column on a plain listing save.
+        ...(tourUrl || propertyToEdit?.virtual_tour_url
+          ? { virtual_tour_url: tourUrl || null }
+          : {}),
       };
 
+      const missingTourColumn = (msg?: string) => /virtual_tour_url/i.test(msg || '');
+      const withoutTour = (data: Partial<Property>): Partial<Property> => {
+        const { virtual_tour_url, ...rest } = data;
+        return rest;
+      };
+
+      let tourSkipped = false;
       let propertyId = savedPropertyId || propertyToEdit?.id || null;
 
       if (propertyId) {
-        const res = await updateProperty(propertyId, propertyData, profile?.id);
+        let res = await updateProperty(propertyId, propertyData, profile?.id);
+        if (!res.success && 'virtual_tour_url' in propertyData && missingTourColumn(res.error)) {
+          const retry = await updateProperty(propertyId, withoutTour(propertyData), profile?.id);
+          if (retry.success) {
+            tourSkipped = true;
+            res = retry;
+          }
+        }
         if (!res.success) throw new Error(res.error);
       } else {
-        const res = await createProperty(propertyData, [], [], profile?.id);
+        let res = await createProperty(propertyData, [], [], profile?.id);
+        if (!res.success && 'virtual_tour_url' in propertyData && missingTourColumn(res.error)) {
+          const retry = await createProperty(withoutTour(propertyData), [], [], profile?.id);
+          if (retry.success) {
+            tourSkipped = true;
+            res = retry;
+          }
+        }
         if (!res.success || !res.data) throw new Error(res.error);
         propertyId = res.data.id;
         setSavedPropertyId(propertyId);
       }
 
-      // Upload photos if any selected
-      const failedPhotos: string[] = [];
+      // Upload photos and videos if any selected
+      const failedFiles: string[] = [];
       const mediaErrors: string[] = [];
-      const uploadedUrls: string[] = [];
+      const uploadedRows: SavedMediaRow[] = [];
 
-      if (imageFiles.length > 0 && propertyId) {
-        const startingOrder = savedPhotos.length;
-        for (let i = 0; i < imageFiles.length; i++) {
-          const uploadRes = await uploadMediaFile(imageFiles[i], 'property-media');
+      if (propertyId) {
+        const startingOrder = savedMedia.length;
+        let order = startingOrder;
+
+        for (const file of imageFiles) {
+          const uploadRes = await uploadMediaFile(file, 'property-media');
           if (!uploadRes.url) {
-            failedPhotos.push(imageFiles[i].name);
+            failedFiles.push(file.name);
+            order += 1;
             continue;
           }
 
           const mediaRes = await addPropertyMedia({
             property_id: propertyId,
             url: uploadRes.url,
-            is_primary: startingOrder === 0 && i === 0,
+            is_primary: startingOrder === 0 && order === startingOrder,
             media_type: 'IMAGE',
-            sort_order: startingOrder + i,
+            sort_order: order,
           });
 
-          if (mediaRes.success) uploadedUrls.push(uploadRes.url);
+          if (mediaRes.success) uploadedRows.push({ url: uploadRes.url, media_type: 'IMAGE' });
           else mediaErrors.push(mediaRes.error || 'unknown database error');
+          order += 1;
+        }
+
+        for (const file of videoFiles) {
+          const uploadRes = await uploadMediaFile(file, 'property-media');
+          if (!uploadRes.url) {
+            failedFiles.push(file.name);
+            order += 1;
+            continue;
+          }
+
+          // Videos are their own media type: never the card cover, never <img>.
+          const mediaRes = await addPropertyMedia({
+            property_id: propertyId,
+            url: uploadRes.url,
+            is_primary: false,
+            media_type: 'VIDEO',
+            caption: file.name,
+            sort_order: order,
+          });
+
+          if (mediaRes.success) uploadedRows.push({ url: uploadRes.url, media_type: 'VIDEO' });
+          else mediaErrors.push(mediaRes.error || 'unknown database error');
+          order += 1;
         }
 
         // Self-heal: drop stale rows saved with an unloadable (blob:) URL
@@ -249,20 +360,31 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
       }
 
       if (mediaErrors.length > 0) {
-        throw new Error(`Photos uploaded, but could not be saved: ${mediaErrors[0]}`);
+        throw new Error(`Files uploaded, but could not be saved: ${mediaErrors[0]}`);
+      }
+
+      if (uploadedRows.length > 0) {
+        setSavedMedia((prev) => [...prev, ...uploadedRows]);
       }
 
       onSuccess();
 
-      if (failedPhotos.length > 0) {
+      if (failedFiles.length > 0) {
         // Listing is saved; keep the dialog open so the warning is visible and
-        // the remaining photos can be picked again safely (no duplicate listing).
-        setSavedPhotos((prev) => [...prev, ...uploadedUrls]);
+        // the remaining files can be picked again safely (no duplicate listing).
         setImageFiles([]);
+        setVideoFiles([]);
         setWarning(
-          `${failedPhotos.length} photo(s) could not be processed (${failedPhotos.join(
+          `${failedFiles.length} file(s) could not be uploaded (${failedFiles.join(
             ', '
-          )}). Your listing was saved — select those photos again to retry.`
+          )}). Your listing was saved — select ${failedFiles.length === 1 ? 'it' : 'them'} again to retry.`
+        );
+        return;
+      }
+
+      if (tourSkipped) {
+        setWarning(
+          'Your listing was saved, but the 360° tour / video link was not stored: the properties.virtual_tour_url column is missing. Run the SQL schema once (Supabase SQL Editor → Database Connection & SQL → Copy Full SQL Schema), then re-save this field.'
         );
         return;
       }
@@ -633,35 +755,73 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
             </div>
           </div>
 
-          {/* Section 6: Photos & Media */}
+          {/* Section 6: Photos, Videos & Media */}
           <div className="space-y-3">
             <h4 className="font-extrabold text-sm text-[#2A0845] border-b border-slate-100 pb-2 flex items-center gap-1.5">
               <Upload className="w-4 h-4 text-[#D4AF37]" />
-              6. Photos & Virtual Tour
+              6. Photos, Videos & Virtual Tour
             </h4>
 
-            {savedPhotos.length > 0 && (
+            {savedMedia.length > 0 && (
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Photos on this listing ({savedPhotos.length})
+                  Media on this listing ({savedMedia.length})
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {savedPhotos.map((src, idx) => (
+                  {savedMedia.map((row, idx) => (
                     <div
                       key={`saved-${idx}`}
-                      className="w-24 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-100"
+                      className="relative w-24 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-100"
                     >
-                      <img
-                        src={src}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
+                      {row.media_type === 'VIDEO' ? (
+                        <video
+                          src={row.url}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLVideoElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <img
+                          src={row.url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      )}
+                      {row.media_type === 'VIDEO' && (
+                        <span className="absolute bottom-1 left-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold uppercase">
+                          <Film className="w-2.5 h-2.5" /> Video
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {storageReady === false && (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
+                <p className="text-amber-900 font-semibold text-xs">
+                  Supabase Storage is not set up yet (bucket “property-media” is missing).
+                </p>
+                <p className="text-amber-800 text-[11px] leading-relaxed">
+                  Photos will still be saved as a compressed inline copy, but{' '}
+                  <strong>videos cannot be uploaded until Storage exists</strong>. Run the SQL schema once:
+                  copy it below, paste it into the Supabase SQL Editor and press Run.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCopySchema}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[11px] font-bold hover:bg-amber-700 transition-colors cursor-pointer"
+                >
+                  {schemaCopied ? 'SQL Copied — paste it in Supabase' : 'Copy Full SQL Schema'}
+                </button>
               </div>
             )}
 
@@ -688,6 +848,36 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
             </div>
 
             <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                Upload Property Video Walkthrough (MP4 / WebM)
+              </label>
+              <input
+                type="file"
+                multiple
+                accept="video/*"
+                onChange={(e) => {
+                  if (e.target.files) {
+                    setVideoFiles(Array.from(e.target.files));
+                  }
+                }}
+                className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-700 file:text-white hover:file:bg-purple-800"
+              />
+              {videoFiles.length > 0 && (
+                <ul className="mt-1 space-y-0.5">
+                  {videoFiles.map((f, idx) => (
+                    <li key={`video-${idx}`} className="text-[11px] text-purple-800 font-semibold flex items-center gap-1.5">
+                      <Film className="w-3 h-3" />
+                      {f.name} ({(f.size / 1_000_000).toFixed(1)} MB)
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[11px] text-slate-500 mt-1">
+                Saved videos play directly on the public listing page — no third-party link needed.
+              </p>
+            </div>
+
+            <div>
               <label className="block font-semibold text-slate-700 mb-1">360° Virtual Tour / Video URL</label>
               <input
                 type="url"
@@ -696,6 +886,9 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
                 onChange={(e) => setVirtualTourUrl(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs"
               />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Optional. YouTube, Vimeo and Matterport links are embedded on the listing page.
+              </p>
             </div>
           </div>
         </form>

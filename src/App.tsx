@@ -30,6 +30,7 @@ import {
   fetchAllViewings,
   getPropertyByIdOrSlug,
 } from './lib/db';
+import { getSupabase, getSupabaseCredentials } from './lib/supabase';
 
 const MainApplication: React.FC = () => {
   const { profile } = useAuth();
@@ -88,6 +89,43 @@ const MainApplication: React.FC = () => {
 
   useEffect(() => {
     loadAllData();
+  }, [profile?.role]);
+
+  // Realtime: when the super-admin saves a listing or uploads a photo/video,
+  // every open tab picks the change up without a hard refresh. Best effort —
+  // if the realtime publication is not enabled the channel simply never fires.
+  const [listingRefreshKey, setListingRefreshKey] = useState(0);
+  useEffect(() => {
+    if (!getSupabaseCredentials().isConfigured) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const channel = getSupabase()
+        .channel('public-listings')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'property_media' }, () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            loadAllData();
+            setListingRefreshKey((key) => key + 1);
+          }, 600);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'properties' }, () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            loadAllData();
+            setListingRefreshKey((key) => key + 1);
+          }, 600);
+        })
+        .subscribe();
+
+      return () => {
+        clearTimeout(timer);
+        getSupabase().removeChannel(channel);
+      };
+    } catch {
+      // Realtime unavailable → the listing still refreshes on navigation.
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.role]);
 
   // Track fresh sign-in to redirect owners to their dashboard
@@ -180,7 +218,9 @@ const MainApplication: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedProperty?.id]);
+    // listingRefreshKey: re-pull the gallery when a realtime event tells us the
+    // admin changed media on this property (video uploaded after the page load).
+  }, [selectedProperty?.id, listingRefreshKey]);
 
   // Keep browser URL in sync with the current view/property for rich social sharing & search engine bots
   useEffect(() => {

@@ -25,7 +25,13 @@ import {
 } from 'lucide-react';
 import { Property, PropertyUnit, CurrencyCode, CompanySettings, UserProfile } from '../../types';
 import { formatCurrency } from '../../lib/db';
-import { usableMedia } from '../../lib/media';
+import {
+  usableMedia,
+  isImageMedia,
+  isVideoMedia,
+  isPlayableVideoUrl,
+  toEmbedUrl,
+} from '../../lib/media';
 import { ReservationModal } from '../modals/ReservationModal';
 import { ViewingRequestModal } from '../modals/ViewingRequestModal';
 
@@ -64,9 +70,13 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
   const isRenderable = (url?: string | null) => Boolean(url) && !brokenSrcs.includes(url as string);
 
   const allMedia = usableMedia(property.media);
-  const images = allMedia.filter((m) => m.media_type === 'IMAGE');
-  const videos = allMedia.filter((m) => m.media_type === 'VIDEO');
-  const activeMedia = images[activeImageIndex] || images[0] || null;
+  const images = allMedia.filter(isImageMedia);
+  const videos = allMedia.filter(isVideoMedia);
+  // The gallery plays videos too, so customers can watch the walkthrough that
+  // the admin uploaded without leaving the listing.
+  const gallery = [...images, ...videos];
+  const activeMedia = gallery[activeImageIndex] || gallery[0] || null;
+  const activeIsVideo = activeMedia ? isVideoMedia(activeMedia) : false;
 
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/?property=${encodeURIComponent(property.slug || property.id)}`;
@@ -144,7 +154,42 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
             {/* Gallery Section */}
             <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/80 shadow-xs">
               <div className="relative aspect-16/9 bg-slate-900 overflow-hidden">
-                {activeMedia && isRenderable(activeMedia.url) ? (
+                {activeMedia && activeIsVideo && isRenderable(activeMedia.url) ? (
+                  isPlayableVideoUrl(activeMedia.url) ? (
+                    <video
+                      key={activeMedia.url}
+                      src={activeMedia.url}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full object-contain bg-black"
+                      onError={() => markBroken(activeMedia.url)}
+                    />
+                  ) : toEmbedUrl(activeMedia.url) ? (
+                    <iframe
+                      key={activeMedia.url}
+                      src={toEmbedUrl(activeMedia.url) as string}
+                      title={`${property.title} video tour`}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      className="w-full h-full border-0"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-300 p-6 text-center">
+                      <Video className="w-12 h-12 text-[#D4AF37]" />
+                      <span className="text-xs text-slate-400">This video is hosted externally.</span>
+                      <a
+                        href={activeMedia.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 text-white font-semibold text-xs hover:bg-purple-700 transition-colors"
+                      >
+                        <span>Watch Video</span>
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                  )
+                ) : activeMedia && isRenderable(activeMedia.url) ? (
                   <img
                     src={activeMedia.url}
                     alt={property.title}
@@ -176,18 +221,20 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
                 </div>
 
                 <div className="absolute bottom-4 right-4 px-3 py-1 rounded-lg bg-black/70 text-white text-xs font-medium backdrop-blur-xs">
-                  {activeMedia && images.length > 0
-                    ? `${images.indexOf(activeMedia) + 1} / ${images.length} Photos`
-                    : 'Photo Preview'}
+                  {activeMedia && activeIsVideo
+                    ? `Video ${videos.indexOf(activeMedia) + 1} / ${videos.length}`
+                    : activeMedia && images.length > 0
+                      ? `${images.indexOf(activeMedia) + 1} / ${images.length} Photos`
+                      : 'Photo Preview'}
                 </div>
               </div>
 
               {/* Thumbnails row */}
-              {images.length > 1 && (
+              {gallery.length > 1 && (
                 <div className="p-3 bg-slate-50 border-t border-slate-100 flex gap-2.5 overflow-x-auto">
-                  {images.map((img, idx) => (
+                  {gallery.map((item, idx) => (
                     <button
-                      key={img.id || idx}
+                      key={item.id || idx}
                       onClick={() => setActiveImageIndex(idx)}
                       className={`relative w-20 h-14 rounded-xl overflow-hidden border-2 shrink-0 transition-all ${
                         activeImageIndex === idx
@@ -195,17 +242,33 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
                           : 'border-transparent opacity-70 hover:opacity-100'
                       }`}
                     >
-                      {isRenderable(img.url) ? (
-                        <img
-                          src={img.url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          onError={() => markBroken(img.url)}
-                        />
+                      {isRenderable(item.url) ? (
+                        isVideoMedia(item) ? (
+                          <video
+                            src={item.url}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="w-full h-full object-cover"
+                            onError={() => markBroken(item.url)}
+                          />
+                        ) : (
+                          <img
+                            src={item.url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={() => markBroken(item.url)}
+                          />
+                        )
                       ) : (
                         <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-400">
                           <ImageIcon className="w-5 h-5" />
                         </div>
+                      )}
+                      {isVideoMedia(item) && (
+                        <span className="absolute bottom-0.5 right-0.5 p-1 rounded bg-black/70 text-white">
+                          <Video className="w-3 h-3" />
+                        </span>
                       )}
                     </button>
                   ))}
@@ -410,17 +473,81 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
                     <Video className="w-5 h-5 text-purple-700" />
                     Virtual Tour & Video Walkthrough
                   </h3>
-                  {property.virtual_tour_url && (
-                    <a
-                      href={property.virtual_tour_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-100 text-[#2A0845] font-semibold text-xs hover:bg-purple-200 transition-colors"
-                    >
-                      <span>Open 360° Interactive Virtual Tour</span>
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-                  )}
+
+                  {property.virtual_tour_url &&
+                    (toEmbedUrl(property.virtual_tour_url) ? (
+                      <div className="aspect-video w-full overflow-hidden rounded-xl border border-purple-100 bg-slate-900">
+                        <iframe
+                          src={toEmbedUrl(property.virtual_tour_url) as string}
+                          title={`${property.title} virtual tour`}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          className="w-full h-full border-0"
+                        />
+                      </div>
+                    ) : isPlayableVideoUrl(property.virtual_tour_url) ? (
+                      <video
+                        src={property.virtual_tour_url}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="w-full max-h-[460px] rounded-xl bg-black"
+                      />
+                    ) : (
+                      <a
+                        href={property.virtual_tour_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-100 text-[#2A0845] font-semibold text-xs hover:bg-purple-200 transition-colors"
+                      >
+                        <span>Open 360° Interactive Virtual Tour</span>
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    ))}
+
+                  {videos.map((video, idx) => (
+                    <div key={video.id || `video-${idx}`} className="space-y-1.5">
+                      {video.caption && (
+                        <p className="text-xs font-semibold text-slate-600">{video.caption}</p>
+                      )}
+                      {isPlayableVideoUrl(video.url) ? (
+                        isRenderable(video.url) ? (
+                          <video
+                            src={video.url}
+                            controls
+                            playsInline
+                            preload="metadata"
+                            className="w-full max-h-[460px] rounded-xl bg-black"
+                            onError={() => markBroken(video.url)}
+                          />
+                        ) : (
+                          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                            This video could not be loaded.
+                          </div>
+                        )
+                      ) : toEmbedUrl(video.url) ? (
+                        <div className="aspect-video w-full overflow-hidden rounded-xl border border-purple-100 bg-slate-900">
+                          <iframe
+                            src={toEmbedUrl(video.url) as string}
+                            title={video.caption || `${property.title} video`}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                            className="w-full h-full border-0"
+                          />
+                        </div>
+                      ) : (
+                        <a
+                          href={video.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-100 text-[#2A0845] font-semibold text-xs hover:bg-purple-200 transition-colors"
+                        >
+                          <span>Watch Video</span>
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

@@ -3,6 +3,7 @@ import {
   isAbsoluteHttpUrl,
   isDurableMediaUrl,
   isPaymentProofPath,
+  isImageMedia,
   compressImageToDataUrl,
   fileToDataUrl,
 } from './media';
@@ -174,7 +175,7 @@ async function attachCoverMedia(supabase: SupabaseClient, properties: Property[]
 
     const coverByProperty = new Map<string, PropertyMedia>();
     for (const row of (primaries as PropertyMedia[]) || []) {
-      if (isDurableMediaUrl(row.url) && !coverByProperty.has(row.property_id)) {
+      if (isImageMedia(row) && !coverByProperty.has(row.property_id)) {
         coverByProperty.set(row.property_id, row);
       }
     }
@@ -190,7 +191,7 @@ async function attachCoverMedia(supabase: SupabaseClient, properties: Property[]
         .order('created_at', { ascending: true });
 
       for (const row of (fallbacks as PropertyMedia[]) || []) {
-        if (isDurableMediaUrl(row.url) && !coverByProperty.has(row.property_id)) {
+        if (isImageMedia(row) && !coverByProperty.has(row.property_id)) {
           coverByProperty.set(row.property_id, row);
         }
       }
@@ -550,10 +551,24 @@ const INLINE_UPLOAD_LIMITS: Record<string, { maxEdge: number; quality: number; m
   'payment-proofs': { maxEdge: 1600, quality: 0.75, maxBase64Length: 600_000 },
 };
 
-function safeFileExtension(name?: string): string {
-  const ext = (name || '').split('.').pop() || '';
-  const clean = ext.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
-  return clean ? `.${clean}` : '.jpg';
+function safeFileExtension(name?: string, mimeType?: string): string {
+  const match = /\.([a-z0-9]{1,8})$/i.exec((name || '').trim());
+  const clean = match ? match[1].toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+  if (clean) return `.${clean}`;
+
+  // Some phones export clips without an extension ("VID_0001"): fall back to
+  // the MIME type so the stored object still advertises the right format.
+  const mime: Record<string, string> = {
+    'video/mp4': '.mp4',
+    'video/webm': '.webm',
+    'video/quicktime': '.mov',
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'application/pdf': '.pdf',
+  };
+  const byType = mimeType ? mime[mimeType.split(';')[0].trim().toLowerCase()] : undefined;
+  return byType || '.jpg';
 }
 
 function randomObjectToken(length = 10): string {
@@ -575,9 +590,24 @@ async function storageUrlIsReachable(url: string): Promise<boolean> {
   }
 }
 
+/** Videos larger than this are rejected up-front (Supabase rejects them too). */
+const MAX_VIDEO_BYTES = 100_000_000; // 100 MB
+/**
+ * Last-resort inline budget for a video when Storage is unavailable. Base64
+ * adds ~33%, so ~900 KB keeps the stored row (and every API response that
+ * returns it) around 1.2 MB — a hard cap, not a target.
+ */
+const MAX_INLINE_VIDEO_BYTES = 900_000;
+
+function isVideoFile(file: File): boolean {
+  if ((file.type || '').toLowerCase().startsWith('video/')) return true;
+  return /\.(mp4|m4v|mov|webm|ogv|ogg|avi|mkv)$/i.test((file.name || '').trim());
+}
+
 /**
  * Uploads a file to Supabase Storage when the bucket exists and is readable,
- * otherwise stores a compressed, durable copy of the image inline.
+ * otherwise stores a compressed, durable copy inline (images) — or, for small
+ * clips, a bounded inline copy of a video.
  *
  * It NEVER returns a `blob:` URL: those die with the tab that created them,
  * which is exactly how uploaded photos used to disappear after a reload.
@@ -587,6 +617,16 @@ export async function uploadMediaFile(
   bucket: 'property-media' | 'payment-proofs' = 'property-media'
 ): Promise<{ url: string | null; error?: string; source?: 'storage' | 'inline' }> {
   let storageError: string | undefined;
+  const video = isVideoFile(file);
+
+  if (video && file.size > MAX_VIDEO_BYTES) {
+    return {
+      url: null,
+      error: `"${file.name}" is ${(file.size / 1_000_000).toFixed(0)} MB. Videos must be under ${
+        MAX_VIDEO_BYTES / 1_000_000
+      } MB — compress it (e.g. 720p MP4) and try again.`,
+    };
+  }
 
   try {
     const { isConfigured } = getSupabaseCredentials();
@@ -595,12 +635,23 @@ export async function uploadMediaFile(
       storageError = 'Supabase storage is not configured';
     } else {
       const supabase = getSupabase();
-      const { data: bucketInfo, error: bucketError } = await supabase.storage.getBucket(bucket);
+      const { error: bucketError } = await supabase.storage.getBucket(bucket);
 
       if (bucketError) {
-        storageError = bucketError.message || `Storage bucket "${bucket}" is not available`;
-      } else {
-        const objectPath = `${Date.now()}_${randomObjectToken()}${safeFileExtension(file.name)}`;
+        // Self-heal: a signed-in company owner may create the bucket directly
+        // (policy "Owner creates storage buckets" from the SQL schema). If that
+        // policy has not been installed yet, report the exact fix instead of
+        // failing with an opaque storage message.
+        const { error: createError } = await supabase.storage.createBucket(bucket, {
+          public: bucket === 'property-media',
+        });
+        if (createError && !/already exists|duplicate/i.test(createError.message || '')) {
+          storageError = `${createError.message || `Storage bucket "${bucket}" is not available`} — run public/supabase-schema.sql once in the Supabase SQL Editor to create the "${bucket}" bucket and its policies.`;
+        }
+      }
+
+      if (!storageError) {
+        const objectPath = `${Date.now()}_${randomObjectToken()}${safeFileExtension(file.name, file.type)}`;
         const { error: uploadError } = await supabase.storage
           .from(bucket)
           .upload(objectPath, file, { contentType: file.type || undefined, upsert: false });
@@ -617,7 +668,7 @@ export async function uploadMediaFile(
           if (isAbsoluteHttpUrl(candidate) && (await storageUrlIsReachable(candidate))) {
             return { url: candidate, source: 'storage' };
           }
-          storageError = `Uploaded file is not publicly readable in "${bucket}"`;
+          storageError = `Uploaded file is not publicly readable in "${bucket}" — the public-read policy is missing; run public/supabase-schema.sql once in the Supabase SQL Editor.`;
         }
       }
     }
@@ -626,13 +677,28 @@ export async function uploadMediaFile(
   }
 
   // Storage unavailable → keep the file working with a durable inline copy.
-  // Images are re-compressed; non-images (PDF proofs) are kept as-is, capped.
-  const isImage = !file.type || file.type.startsWith('image/');
-  const inlineUrl = isImage
-    ? await compressImageToDataUrl(file, INLINE_UPLOAD_LIMITS[bucket] || INLINE_UPLOAD_LIMITS['property-media'])
-    : await fileToDataUrl(file, bucket === 'payment-proofs' ? 4_000_000 : 1_500_000);
+  // Images are re-compressed; small videos are kept as-is, capped.
+  const inlineUrl = video
+    ? file.size <= MAX_INLINE_VIDEO_BYTES
+      ? await fileToDataUrl(file, MAX_INLINE_VIDEO_BYTES)
+      : null
+    : !file.type || file.type.startsWith('image/')
+      ? await compressImageToDataUrl(file, INLINE_UPLOAD_LIMITS[bucket] || INLINE_UPLOAD_LIMITS['property-media'])
+      : await fileToDataUrl(file, bucket === 'payment-proofs' ? 4_000_000 : 1_500_000);
+
   if (inlineUrl) {
     return { url: inlineUrl, source: 'inline', error: storageError };
+  }
+
+  if (video) {
+    return {
+      url: null,
+      error:
+        storageError ||
+        `"${file.name}" is too large to store inline (${Math.round(
+          file.size / 1000
+        )} KB). Enable the public "property-media" Storage bucket so videos can be uploaded.`,
+    };
   }
 
   return { url: null, error: storageError || `"${file.name}" could not be processed for upload` };

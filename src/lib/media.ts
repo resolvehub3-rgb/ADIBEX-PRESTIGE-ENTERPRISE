@@ -47,6 +47,80 @@ export function isAbsoluteHttpUrl(url?: string | null): boolean {
   return lower.startsWith('http://') || lower.startsWith('https://');
 }
 
+// ------------------------------------------------------------------------
+// VIDEO HELPERS
+// ------------------------------------------------------------------------
+
+const VIDEO_FILE_EXT = /\.(mp4|m4v|mov|webm|ogv|ogg|avi|mkv)$/i;
+
+/** True when a URL points at a video file a <video> element can actually play. */
+export function isPlayableVideoUrl(url?: string | null): boolean {
+  if (!url) return false;
+  const value = String(url).trim();
+  if (!value) return false;
+  if (value.toLowerCase().startsWith('data:video/')) return true;
+  if (!isAbsoluteHttpUrl(value)) return false;
+  return VIDEO_FILE_EXT.test(value.split(/[?#]/)[0]);
+}
+
+/** Hosts that must be rendered in an iframe (YouTube, Vimeo, Matterport...). */
+const EMBED_HOST = /(?:youtube\.com|youtu\.be|vimeo\.com|matterport\.com|google\.com\/maps|maps\.app\.goo\.gl)/i;
+
+export function isEmbeddableUrl(url?: string | null): boolean {
+  if (!url || !isAbsoluteHttpUrl(url)) return false;
+  try {
+    return EMBED_HOST.test(new URL(String(url).trim()).host) || EMBED_HOST.test(String(url).trim());
+  } catch {
+    return EMBED_HOST.test(String(url).trim());
+  }
+}
+
+/** Rewrites a watch/share link into an iframe-safe embed URL (null if none). */
+export function toEmbedUrl(url?: string | null): string | null {
+  if (!url || !isAbsoluteHttpUrl(url)) return null;
+  const raw = String(url).trim();
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.replace(/^www\./, '');
+
+    if (host === 'youtu.be') return `https://www.youtube.com/embed/${parsed.pathname.slice(1)}`;
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+      const id = parsed.searchParams.get('v');
+      if (id) return `https://www.youtube.com/embed/${id}`;
+      if (parsed.pathname.startsWith('/shorts/')) return `https://www.youtube.com/embed/${parsed.pathname.split('/')[2] || ''}`;
+      if (parsed.pathname.startsWith('/embed/')) return raw;
+    }
+    if (host === 'vimeo.com') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0];
+      if (id && /^\d+$/.test(id)) return `https://player.vimeo.com/video/${id}`;
+    }
+    if (isEmbeddableUrl(raw)) return raw;
+    return null;
+  } catch {
+    return isEmbeddableUrl(raw) ? raw : null;
+  }
+}
+
+type MediaLike = { media_type?: string | null; url: string };
+
+/** Rows meant to be rendered inside an <img> (never videos or documents). */
+export function isImageMedia<T extends MediaLike>(media: T | null | undefined): boolean {
+  if (!media || !isDurableMediaUrl(media?.url)) return false;
+  const type = String(media.media_type || 'IMAGE').toUpperCase();
+  if (type === 'VIDEO' || type === 'DOCUMENT') return false;
+  return !isPlayableVideoUrl(media.url);
+}
+
+/**
+ * Rows meant for a player: an explicit VIDEO row (or a URL that is clearly a
+ * video file). The URL still has to be durable so it can reach the DOM.
+ */
+export function isVideoMedia<T extends MediaLike>(media: T | null | undefined): boolean {
+  if (!media || !isDurableMediaUrl(media?.url)) return false;
+  if (String(media.media_type || '').toUpperCase() === 'VIDEO') return true;
+  return isPlayableVideoUrl(media.url);
+}
+
 /** Drops dead/ephemeral entries so a broken image can never reach the DOM. */
 export function usableMedia<T extends { url: string }>(media?: T[] | null): T[] {
   if (!media || media.length === 0) return [];
@@ -57,7 +131,12 @@ export function usableMedia<T extends { url: string }>(media?: T[] | null): T[] 
 export function primaryMedia(media?: PropertyMedia[] | null): PropertyMedia | null {
   const usable = usableMedia(media);
   if (usable.length === 0) return null;
-  return usable.find((m) => m.is_primary) || usable[0] || null;
+  // Never hand an <img> a video (or any non-image) URL: the card would render
+  // a broken thumbnail instead of the branded placeholder.
+  const images = usable.filter(isImageMedia);
+  const pool = images.length > 0 ? images : [];
+  if (pool.length === 0) return null;
+  return pool.find((m) => m.is_primary) || pool[0] || null;
 }
 
 // ------------------------------------------------------------------------
