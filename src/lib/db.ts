@@ -4,6 +4,7 @@ import {
   isDurableMediaUrl,
   isPaymentProofPath,
   isImageMedia,
+  isVideoMedia,
   compressImageToDataUrl,
   fileToDataUrl,
 } from './media';
@@ -150,14 +151,51 @@ function filterUsableMedia(media?: PropertyMedia[] | null): PropertyMedia[] {
 }
 
 /**
- * List views only need one photo per listing, so instead of pulling every
+ * Supabase REST occasionally drops a connection mid-flight. One retry keeps a
+ * listing from losing its cover (or its autoplaying video preview) on a flake.
+ */
+async function selectMediaRows(
+  build: () => PromiseLike<{ data: unknown; error: unknown }>
+): Promise<PropertyMedia[]> {
+  let lastError: unknown = new Error('media query failed');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { data, error } = await build();
+      if (!error) return (data as PropertyMedia[] | null) || [];
+      lastError = error;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Last cover (photo or clip) successfully attached per listing, so a transient
+ * fetch failure blanks nothing that already rendered.
+ */
+const coverCache = new Map<string, PropertyMedia>();
+
+/**
+ * List views only need one preview per listing, so instead of pulling every
  * photo (which may be stored inline as a data URL) we attach the primary,
  * otherwise the first usable, media row to each property on the page.
+ *
+ * Listings with no photo keep their video clip, which the card autoplays
+ * silently, so a video walkthrough never degrades into the branded placeholder.
  */
 async function attachCoverMedia(supabase: SupabaseClient, properties: Property[]): Promise<void> {
-  const reset = () => {
+  // Never break the listing request itself: keep whatever rows we already
+  // have, then reuse the last cover we managed to attach for each listing.
+  const recover = () => {
     for (const property of properties) {
-      property.media = filterUsableMedia(property.media);
+      const current = filterUsableMedia(property.media);
+      if (current.length > 0) {
+        property.media = current;
+        continue;
+      }
+      const cached = coverCache.get(property.id);
+      property.media = cached ? [cached] : [];
     }
   };
 
@@ -166,44 +204,56 @@ async function attachCoverMedia(supabase: SupabaseClient, properties: Property[]
   if (ids.length === 0) return;
 
   try {
-    const { data: primaries } = await supabase
-      .from('property_media')
-      .select(MEDIA_SELECT_COLUMNS)
-      .in('property_id', ids)
-      .eq('is_primary', true)
-      .order('sort_order', { ascending: true });
+    const primaries = await selectMediaRows(() =>
+      supabase
+        .from('property_media')
+        .select(MEDIA_SELECT_COLUMNS)
+        .in('property_id', ids)
+        .eq('is_primary', true)
+        .order('sort_order', { ascending: true })
+    );
 
     const coverByProperty = new Map<string, PropertyMedia>();
-    for (const row of (primaries as PropertyMedia[]) || []) {
+    for (const row of primaries) {
       if (isImageMedia(row) && !coverByProperty.has(row.property_id)) {
         coverByProperty.set(row.property_id, row);
       }
     }
 
+    // A listing may have no photo at all, only a walkthrough clip.
+    const videoByProperty = new Map<string, PropertyMedia>();
+
     // Listings whose primary photo is missing or unusable: fall back to any usable photo.
     const missing = ids.filter((id) => !coverByProperty.has(id));
     if (missing.length > 0) {
-      const { data: fallbacks } = await supabase
-        .from('property_media')
-        .select(MEDIA_SELECT_COLUMNS)
-        .in('property_id', missing)
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true });
+      const fallbacks = await selectMediaRows(() =>
+        supabase
+          .from('property_media')
+          .select(MEDIA_SELECT_COLUMNS)
+          .in('property_id', missing)
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true })
+      );
 
-      for (const row of (fallbacks as PropertyMedia[]) || []) {
+      for (const row of fallbacks) {
         if (isImageMedia(row) && !coverByProperty.has(row.property_id)) {
           coverByProperty.set(row.property_id, row);
+        } else if (isVideoMedia(row) && !videoByProperty.has(row.property_id)) {
+          videoByProperty.set(row.property_id, row);
         }
       }
     }
 
     for (const property of properties) {
       const cover = coverByProperty.get(property.id);
-      property.media = cover ? [cover] : [];
+      const video = videoByProperty.get(property.id);
+      const preview = cover || video || null;
+      if (preview) coverCache.set(property.id, preview);
+      else coverCache.delete(property.id);
+      property.media = preview ? [preview] : [];
     }
   } catch (err) {
-    // A thumbnail must never break the listing request itself.
-    reset();
+    recover();
   }
 }
 

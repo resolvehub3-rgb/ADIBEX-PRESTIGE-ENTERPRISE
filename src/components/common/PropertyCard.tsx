@@ -9,10 +9,12 @@ import {
   Eye,
   Layers,
   Sparkles,
+  Play,
 } from 'lucide-react';
 import { Property, CurrencyCode, PROPERTY_TYPE_LABELS } from '../../types';
 import { formatCurrency } from '../../lib/db';
-import { primaryMedia } from '../../lib/media';
+import { primaryMedia, primaryVideo } from '../../lib/media';
+import type { CoverVideo } from '../../lib/media';
 
 interface PropertyCardProps {
   property: Property;
@@ -22,6 +24,9 @@ interface PropertyCardProps {
   onSelect: (property: Property) => void;
   onReserveClick?: (property: Property) => void;
 }
+
+/** Reload attempts for a cover clip before the branded placeholder takes over. */
+const VIDEO_MAX_RETRIES = 2;
 
 export const PropertyCard: React.FC<PropertyCardProps> = ({
   property,
@@ -35,10 +40,57 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
   const cover = primaryMedia(property.media);
   const imageUrl = cover?.url || null;
 
+  // A listing whose only media is a video would otherwise drop to the branded
+  // placeholder. Use the clip itself as the cover and let it autoplay silently.
+  const video: CoverVideo | null = primaryVideo(property.media, property.virtual_tour_url);
+
   // If a URL still fails to load at runtime, fall back to the branded
   // placeholder instead of showing a broken image.
   const [failedSrc, setFailedSrc] = React.useState<string | null>(null);
+  const [failedVideo, setFailedVideo] = React.useState<string | null>(null);
+  // One dropped connection must not strand the listing on the placeholder:
+  // the clip gets a couple of reloads before we give up on it.
+  const [videoRetry, setVideoRetry] = React.useState<{ src: string; attempt: number }>({
+    src: '',
+    attempt: 0,
+  });
+  const attempts = video && videoRetry.src === video.src ? videoRetry.attempt : 0;
+
   const showImage = Boolean(imageUrl) && failedSrc !== imageUrl;
+  const showVideo = !showImage && video !== null && failedVideo !== video.src;
+
+  const handleVideoError = React.useCallback(() => {
+    if (!video) return;
+    if (attempts >= VIDEO_MAX_RETRIES) {
+      setFailedVideo(video.src);
+      return;
+    }
+    const attempt = attempts + 1;
+    const src = video.src;
+    window.setTimeout(() => setVideoRetry({ src, attempt }), 1200 * attempt);
+  }, [video, attempts]);
+
+  // Autoplay is only allowed when the element is muted before playback starts,
+  // and React does not always apply `muted` as a property, so force it here.
+  const videoRef = React.useCallback((node: HTMLVideoElement | null) => {
+    if (!node) return;
+    node.muted = true;
+    node.defaultMuted = true;
+    node.volume = 0;
+    const played = node.play();
+    if (played && typeof played.catch === 'function') played.catch(() => undefined);
+  }, []);
+
+  // Browsers can defer or drop the first play() while the clip is still
+  // buffering (or when the tab was briefly in the background), so kick it off
+  // again as soon as there is enough data to show the preview moving.
+  const ensurePlaying = React.useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const el = e.currentTarget;
+    el.muted = true;
+    if (!el.paused) return;
+    const played = el.play();
+    if (played && typeof played.catch === 'function') played.catch(() => undefined);
+  }, []);
 
   const typeInfo = PROPERTY_TYPE_LABELS[property.property_type] || {
     label: property.property_type,
@@ -96,6 +148,31 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
             loading="lazy"
             onError={() => setFailedSrc(imageUrl as string)}
           />
+        ) : showVideo && video?.kind === 'file' ? (
+          <video
+            ref={videoRef}
+            key={`${video.src}#${attempts}`}
+            src={video.src}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            aria-label={`${property.title} video preview`}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            onCanPlay={ensurePlaying}
+            onError={handleVideoError}
+          />
+        ) : showVideo && video?.kind === 'embed' ? (
+          <iframe
+            key={video.src}
+            src={video.src}
+            title={`${property.title} video preview`}
+            loading="lazy"
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            allowFullScreen
+            className="w-full h-full border-0 bg-black"
+          />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#2A0845]/10 to-[#D4AF37]/15 text-[#2A0845] p-4 text-center">
             <div className="w-12 h-12 rounded-xl bg-white/80 flex items-center justify-center mb-2 shadow-xs">
@@ -135,6 +212,14 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
             <span>
               {availableUnitsCount} of {totalUnitsCount} Units Available
             </span>
+          </div>
+        )}
+
+        {/* Silent autoplaying preview badge */}
+        {showVideo && (
+          <div className="absolute bottom-3 right-3 px-2 py-1 rounded-lg bg-black/75 text-white backdrop-blur-xs text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+            <Play className="w-3 h-3 text-[#D4AF37] fill-[#D4AF37]" />
+            <span>Video Tour</span>
           </div>
         )}
       </div>

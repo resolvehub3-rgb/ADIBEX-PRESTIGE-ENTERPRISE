@@ -127,6 +127,77 @@ export function usableMedia<T extends { url: string }>(media?: T[] | null): T[] 
   return media.filter((m) => isDurableMediaUrl(m?.url));
 }
 
+/** A card-ready video: a direct file for <video>, or an iframe-safe embed. */
+export type CoverVideo = { kind: 'file'; src: string } | { kind: 'embed'; src: string };
+
+/** Query params that make an embedded player start muted and loop forever. */
+function withAutoplayParams(embedUrl: string): string {
+  try {
+    const url = new URL(embedUrl);
+    const host = url.hostname.replace(/^www\./, '');
+
+    if (host === 'youtu.be' || host.endsWith('youtube.com')) {
+      const id = url.pathname.split('/embed/')[1] || '';
+      url.searchParams.set('autoplay', '1');
+      url.searchParams.set('mute', '1');
+      url.searchParams.set('playsinline', '1');
+      url.searchParams.set('controls', '0');
+      url.searchParams.set('modestbranding', '1');
+      url.searchParams.set('rel', '0');
+      if (id) {
+        url.searchParams.set('loop', '1');
+        url.searchParams.set('playlist', id);
+      }
+      return url.toString();
+    }
+
+    if (host.endsWith('vimeo.com')) {
+      url.searchParams.set('autoplay', '1');
+      url.searchParams.set('muted', '1');
+      url.searchParams.set('loop', '1');
+      url.searchParams.set('background', '1');
+      return url.toString();
+    }
+
+    url.searchParams.set('autoplay', '1');
+    url.searchParams.set('mute', '1');
+    return url.toString();
+  } catch {
+    return embedUrl;
+  }
+}
+
+/**
+ * Cover video of a property: the first clip a card can autoplay silently,
+ * so a video listing never degrades into the branded placeholder.
+ *
+ * Sources are tried in order: a direct video file in the media rows, an
+ * embeddable media row (YouTube / Vimeo / Matterport), then the listing's
+ * `virtual_tour_url` — a listing may carry only that link and no rows at all.
+ */
+export function primaryVideo(
+  media?: PropertyMedia[] | null,
+  fallbackUrl?: string | null
+): CoverVideo | null {
+  const rows = usableMedia(media);
+
+  const file = rows.find((m) => isVideoMedia(m) && isPlayableVideoUrl(m.url));
+  if (file) return { kind: 'file', src: file.url };
+
+  const embedRow = rows.find((m) => isVideoMedia(m) && toEmbedUrl(m.url));
+  const embedSrc = embedRow ? toEmbedUrl(embedRow.url) : null;
+  if (embedRow && embedSrc) return { kind: 'embed', src: withAutoplayParams(embedSrc) };
+
+  const link = typeof fallbackUrl === 'string' ? fallbackUrl.trim() : '';
+  if (link && isDurableMediaUrl(link)) {
+    if (isPlayableVideoUrl(link)) return { kind: 'file', src: link };
+    const embed = toEmbedUrl(link);
+    if (embed) return { kind: 'embed', src: withAutoplayParams(embed) };
+  }
+
+  return null;
+}
+
 /** Primary photo of a property, ignoring rows whose URL can never load. */
 export function primaryMedia(media?: PropertyMedia[] | null): PropertyMedia | null {
   const usable = usableMedia(media);
