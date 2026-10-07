@@ -184,16 +184,16 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-purple-100 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain bg-black/60 backdrop-blur-xs p-2 sm:p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-purple-100 flex flex-col max-h-[95dvh] sm:max-h-[90vh] my-auto">
         {/* Header */}
-        <div className="p-5 bg-gradient-to-r from-[#2A0845] to-[#3D105E] text-white flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/10 border border-[#D4AF37]/50 flex items-center justify-center text-[#D4AF37]">
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-[#2A0845] to-[#3D105E] text-white flex items-center justify-between gap-3 shrink-0">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-white/10 border border-[#D4AF37]/50 flex items-center justify-center text-[#D4AF37]">
               <Building className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="text-[#D4AF37] font-bold text-[10px] tracking-wider uppercase">
                   Reservation System
                 </span>
@@ -202,35 +202,36 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                   Window: {formatCountdown(timeLeft)}
                 </span>
               </div>
-              <h3 className="font-bold text-base text-white truncate max-w-sm">{property.title}</h3>
+              <h3 className="font-bold text-sm sm:text-base text-white truncate max-w-sm">{property.title}</h3>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-purple-200 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Close reservation"
+            className="shrink-0 p-2 rounded-lg text-purple-200 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Stepper Progress */}
-        <div className="grid grid-cols-4 border-b border-slate-100 bg-slate-50 text-[11px] font-semibold text-center">
-          <div className={`py-2.5 ${currentStep >= 1 ? 'text-[#2A0845] border-b-2 border-[#2A0845] bg-white' : 'text-slate-400'}`}>
+        <div className="grid grid-cols-4 border-b border-slate-100 bg-slate-50 text-[10px] sm:text-[11px] font-semibold text-center shrink-0">
+          <div className={`px-1 py-2.5 leading-tight ${currentStep >= 1 ? 'text-[#2A0845] border-b-2 border-[#2A0845] bg-white' : 'text-slate-400'}`}>
             1. Unit & Pricing
           </div>
-          <div className={`py-2.5 ${currentStep >= 2 ? 'text-[#2A0845] border-b-2 border-[#2A0845] bg-white' : 'text-slate-400'}`}>
+          <div className={`px-1 py-2.5 leading-tight ${currentStep >= 2 ? 'text-[#2A0845] border-b-2 border-[#2A0845] bg-white' : 'text-slate-400'}`}>
             2. Customer Info
           </div>
-          <div className={`py-2.5 ${currentStep >= 3 ? 'text-[#2A0845] border-b-2 border-[#2A0845] bg-white' : 'text-slate-400'}`}>
+          <div className={`px-1 py-2.5 leading-tight ${currentStep >= 3 ? 'text-[#2A0845] border-b-2 border-[#2A0845] bg-white' : 'text-slate-400'}`}>
             3. Payment
           </div>
-          <div className={`py-2.5 ${currentStep === 4 ? 'text-emerald-700 border-b-2 border-emerald-600 bg-white' : 'text-slate-400'}`}>
+          <div className={`px-1 py-2.5 leading-tight ${currentStep === 4 ? 'text-emerald-700 border-b-2 border-emerald-600 bg-white' : 'text-slate-400'}`}>
             4. Confirmation
           </div>
         </div>
 
         {/* Body content */}
-        <div className="p-6 overflow-y-auto flex-1 text-slate-700 text-xs">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 text-slate-700 text-xs">
           {error && (
             <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -592,7 +593,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
           {currentStep > 1 && currentStep < 4 ? (
             <button
               type="button"

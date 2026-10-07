@@ -72,27 +72,28 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
   const minDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-purple-100 flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain bg-black/60 backdrop-blur-xs p-2 sm:p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-purple-100 flex flex-col max-h-[95dvh] sm:max-h-[90vh] my-auto">
         {/* Header */}
-        <div className="p-6 bg-gradient-to-r from-[#2A0845] to-[#3D105E] text-white flex items-center justify-between">
-          <div>
+        <div className="p-4 sm:p-6 bg-gradient-to-r from-[#2A0845] to-[#3D105E] text-white flex items-center justify-between gap-3 shrink-0">
+          <div className="min-w-0 flex-1">
             <span className="text-[#D4AF37] font-extrabold tracking-widest text-[10px] uppercase">
               Schedule An In-Person Tour
             </span>
-            <h3 className="font-bold text-lg text-white mt-0.5">Request Property Viewing</h3>
-            <p className="text-xs text-purple-200 line-clamp-1">{property.title}</p>
+            <h3 className="font-bold text-base sm:text-lg text-white mt-0.5 truncate">Request Property Viewing</h3>
+            <p className="text-xs text-purple-200 truncate">{property.title}</p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-purple-200 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Close viewing request"
+            className="shrink-0 p-2 rounded-lg text-purple-200 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {submitted ? (
-          <div className="p-8 text-center space-y-4">
+          <div className="p-4 sm:p-8 text-center space-y-4 flex-1 min-h-0 overflow-y-auto">
             <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
               <CheckCircle2 className="w-8 h-8" />
             </div>
@@ -111,7 +112,7 @@ export const ViewingRequestModal: React.FC<ViewingRequestModalProps> = ({
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-4 text-slate-700 max-h-[80vh] overflow-y-auto">
+          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 text-slate-700 flex-1 min-h-0 overflow-y-auto">
             {error && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
                 {error}
