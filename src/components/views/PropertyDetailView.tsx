@@ -107,22 +107,25 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
     <div className="bg-slate-50/50 min-h-screen pb-20">
       {/* Top Breadcrumb Header */}
       <div className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-2">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-3 text-xs text-slate-500">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <button
               onClick={onBack}
-              className="inline-flex items-center gap-1 font-semibold text-[#2A0845] hover:underline cursor-pointer"
+              className="inline-flex shrink-0 items-center gap-1 font-semibold text-[#2A0845] hover:underline cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Listings</span>
+              <ArrowLeft className="w-4 h-4 shrink-0" />
+              <span className="sm:hidden">Back</span>
+              <span className="hidden sm:inline">Back to Listings</span>
             </button>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-            <span className="capitalize">{property.property_type.replace('_', ' ')}</span>
-            <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-            <span className="text-slate-800 font-medium truncate max-w-xs">{property.title}</span>
+            <ChevronRight className="hidden w-3.5 h-3.5 shrink-0 text-slate-300 sm:block" />
+            <span className="hidden shrink-0 capitalize sm:inline">
+              {property.property_type.replace('_', ' ')}
+            </span>
+            <ChevronRight className="hidden w-3.5 h-3.5 shrink-0 text-slate-300 sm:block" />
+            <span className="max-w-xs min-w-0 truncate text-slate-800 font-medium">{property.title}</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={handleShare}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
@@ -385,8 +388,8 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                    <table className="w-full text-xs">
+                  <div className="border border-slate-200 rounded-2xl overflow-x-auto">
+                    <table className="w-full min-w-[460px] text-xs">
                       <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                         <tr>
                           <th className="py-3 px-4 text-left">Unit / Room</th>
