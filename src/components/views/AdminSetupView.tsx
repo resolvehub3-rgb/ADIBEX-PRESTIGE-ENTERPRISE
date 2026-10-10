@@ -37,6 +37,15 @@ export const AdminSetupView: React.FC<AdminSetupViewProps> = ({ onOpenAuth, onNa
       const { error } = await getSupabase().rpc('claim_first_admin');
 
       if (error) {
+        // The RPC only exists once the migration has been run. Say so plainly
+        // rather than surfacing a raw PostgREST "could not find the function".
+        if (/could not find the function|does not exist/i.test(error.message)) {
+          setClaim({
+            status: 'error',
+            message: 'Owner setup has not been enabled on the database yet.',
+          });
+          return;
+        }
         // The RPC raises a specific exception for each refusal; surface it
         // verbatim rather than inventing a friendlier-but-false explanation.
         setClaim({ status: 'error', message: error.message });
@@ -138,12 +147,23 @@ export const AdminSetupView: React.FC<AdminSetupViewProps> = ({ onOpenAuth, onNa
           </div>
         )}
 
-        {claim.status === 'error' && !/already exists/i.test(claim.message) && (
-          <p className="mb-5 text-xs text-amber-200/70 leading-relaxed">
-            If this account was registered before the database was hardened, its profile row may be
-            missing or stale — sign out, register again, then return here.
-          </p>
-        )}
+        {claim.status === 'error' &&
+          !/already exists/i.test(claim.message) &&
+          /not been enabled/i.test(claim.message) && (
+            <p className="mb-5 text-xs text-amber-200/70 leading-relaxed">
+              Run public/migrations/2026-10-10-admin-bootstrap.sql in the Supabase SQL editor, then
+              reload this page.
+            </p>
+          )}
+
+        {claim.status === 'error' &&
+          !/already exists/i.test(claim.message) &&
+          !/not been enabled/i.test(claim.message) && (
+            <p className="mb-5 text-xs text-amber-200/70 leading-relaxed">
+              If this account was registered before the database was hardened, its profile row may be
+              missing or stale — sign out, register again, then return here.
+            </p>
+          )}
 
         <SetupButton onClick={handleClaim} disabled={claim.status === 'claiming'}>
           {claim.status === 'claiming' ? (
