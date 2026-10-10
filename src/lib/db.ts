@@ -39,7 +39,7 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   phone: '+233 24 456 7890',
   whatsapp: '+233 24 456 7890',
   email: 'info@adibexprestige.com',
-  website: 'https://adibexprestige.com',
+  website: 'https://www.adibexprestige.com',
   address: 'Airport Residential Area, Liberation Road, Accra, Ghana',
   logo_url: null,
   bank_name: 'GCB Bank Ghana Ltd',

@@ -396,7 +396,7 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   phone: '+233 24 000 0000',
   whatsapp: '+233 24 000 0000',
   email: 'info@adibexprestige.com',
-  website: 'https://adibexprestige.com',
+  website: 'https://www.adibexprestige.com',
   address: 'Accra, Greater Accra Region, Ghana',
   bank_name: 'Stanbic Bank Ghana / GCB',
   bank_account_name: 'ADIBEX PRESTIGE ENTERPRISE',

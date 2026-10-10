@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_FILE = path.join(ROOT, 'public', 'sitemap.xml');
-const SITE_URL = (process.env.VITE_SITE_URL || 'https://adibexprestige.com').trim().replace(/\/+$/, '');
+const SITE_URL = (process.env.VITE_SITE_URL || 'https://www.adibexprestige.com').trim().replace(/\/+$/, '');
 
 /** Reads KEY=VALUE pairs the way Vite does, without printing any secrets. */
 function loadLocalEnv() {

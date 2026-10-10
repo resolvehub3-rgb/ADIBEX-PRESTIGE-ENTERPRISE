@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS public.company_settings (
   phone TEXT DEFAULT '+233 24 000 0000',
   whatsapp TEXT DEFAULT '+233 24 000 0000',
   email TEXT DEFAULT 'contact@adibexprestige.com',
-  website TEXT DEFAULT 'https://adibexprestige.com',
+  website TEXT DEFAULT 'https://www.adibexprestige.com',
   address TEXT DEFAULT 'Airport Residential Area, Accra, Ghana',
   logo_url TEXT,
   bank_name TEXT DEFAULT 'GCB Bank Ghana',
