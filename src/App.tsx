@@ -39,6 +39,10 @@ const MainApplication: React.FC = () => {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [searchInitialFilters, setSearchInitialFilters] = useState<any>({});
   const [customerPortalTab, setCustomerPortalTab] = useState<any>('reservations');
+  // True once the deep-link effect below has read the address bar. Until then
+  // the history-sync effect must not write, or it would erase the very
+  // ?view= / /property/ parameters it is supposed to be honouring.
+  const [deepLinkReady, setDeepLinkReady] = useState(false);
 
   // Currency & Favorites
   const [selectedCurrency, setSelectedCurrency] = useState<CurrencyCode>('GHS');
@@ -170,41 +174,79 @@ const MainApplication: React.FC = () => {
     }
   }, []);
 
-  // Handle deep-linking via URL query parameters for SEO and shared Open Graph links
+  // Handle deep-linking via URL path and query parameters for SEO and shared
+  // Open Graph links. Runs once the first data load settles: a /property/<slug>
+  // (or legacy ?property=) key that resolves to nothing — deleted, unpublished
+  // or archived listing — must land on an explicit not-found view marked noindex
+  // instead of silently falling back to the home page, which is what search
+  // engines call a soft 404.
   useEffect(() => {
-    if (properties.length > 0 && typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const propParam = params.get('property');
-      const viewParam = params.get('view');
-      const categoryParam = params.get('category');
-      const typeParam = params.get('type');
+    if (isLoading || typeof window === 'undefined') return;
 
-      if (propParam) {
-        const found = properties.find(
-          (p) => p.slug === propParam || p.id === propParam || p.reference_no === propParam
-        );
-        if (found) {
-          setSelectedProperty(found);
-          setCurrentView('property_detail');
-          return;
-        }
-      }
+    // The URL is now the source of truth for the view, so the history-sync
+    // effect below may start writing. It is deliberately gated on state (not a
+    // ref) so its first run happens in the commit *after* this one, when the
+    // view set here is already committed — otherwise it would rewrite the URL
+    // to "/" (its default for the initial 'home' view) before this effect ever
+    // got to read ?view= or /property/ out of the address bar, silently
+    // breaking every deep link.
+    setDeepLinkReady(true);
 
-      if (viewParam) {
-        if (viewParam === 'search') {
-          setCurrentView('search');
-          if (categoryParam || typeParam) {
-            setSearchInitialFilters({
-              category: categoryParam || 'all',
-              propertyType: typeParam || 'all',
-            });
-          }
-        } else if (['home', 'how-it-works', 'portal'].includes(viewParam)) {
-          setCurrentView(viewParam);
-        }
+    const params = new URLSearchParams(window.location.search);
+    const propParam = params.get('property');
+    // Primary public route is /property/<slug>; ?property= is kept as a
+    // compatibility alias for links that were already shared.
+    const pathMatch = /^\/property\/([^/]+)\/?$/.exec(window.location.pathname);
+    const propertyKey = pathMatch ? decodeURIComponent(pathMatch[1]) : propParam;
+    const viewParam = params.get('view');
+    const categoryParam = params.get('category');
+    const typeParam = params.get('type');
+    const transactionParam = params.get('transaction_type');
+    const queryParam = params.get('q');
+
+    if (propertyKey) {
+      const found = properties.find(
+        (p) => p.slug === propertyKey || p.id === propertyKey || p.reference_no === propertyKey
+      );
+      if (found) {
+        setSelectedProperty(found);
+        setCurrentView('property_detail');
+      } else {
+        setCurrentView('property_not_found');
       }
+      return;
     }
-  }, [properties.length]);
+
+    if (viewParam === 'search') {
+      // Filter keys must match what SearchFilterView reads (snake_case), so a
+      // deep link like ?view=search&type=single_room really shows rooms —
+      // otherwise the page content would contradict its own title.
+      if (currentView !== 'search') {
+        setSearchInitialFilters({
+          ...(categoryParam ? { category: categoryParam } : {}),
+          ...(typeParam ? { property_type: typeParam } : {}),
+          ...(transactionParam ? { transaction_type: transactionParam } : {}),
+          ...(queryParam ? { searchTerm: queryParam } : {}),
+        });
+      }
+      setCurrentView('search');
+      return;
+    }
+
+    if (viewParam === 'how-it-works') {
+      setCurrentView('how_it_works');
+      return;
+    }
+
+    if (viewParam && ['home', 'portal'].includes(viewParam)) {
+      setCurrentView(viewParam);
+    }
+    // Deps deliberately exclude currentView: this effect interprets the URL, it
+    // must not re-run because a view changed (navigation is state-based via
+    // onNavigate, so the address bar is only updated afterwards). It re-runs on
+    // isLoading/properties.length so a /property/<slug> deep link still resolves
+    // once the listing rows have actually arrived.
+  }, [isLoading, properties.length]);
 
   // List responses only carry each listing's cover photo, so pull the full
   // gallery (plus fresh status/units) whenever a property detail is opened.
@@ -231,22 +273,34 @@ const MainApplication: React.FC = () => {
 
   // Keep browser URL in sync with the current view/property for rich social sharing & search engine bots
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    // Wait for the deep-link effect to have consumed the address bar first.
+    if (!deepLinkReady || typeof window === 'undefined') return;
 
     if (currentView === 'property_detail' && selectedProperty) {
       const slug = selectedProperty.slug || selectedProperty.id;
-      window.history.replaceState(null, '', `/?property=${encodeURIComponent(slug)}`);
+      window.history.replaceState(null, '', `/property/${encodeURIComponent(slug)}`);
     } else if (currentView === 'search') {
       const params = new URLSearchParams();
       params.set('view', 'search');
       if (searchInitialFilters?.category && searchInitialFilters.category !== 'all') {
         params.set('category', searchInitialFilters.category);
       }
-      if (searchInitialFilters?.propertyType && searchInitialFilters.propertyType !== 'all') {
-        params.set('type', searchInitialFilters.propertyType);
+      if (
+        searchInitialFilters?.property_type &&
+        searchInitialFilters.property_type !== 'all'
+      ) {
+        params.set('type', searchInitialFilters.property_type);
+      }
+      if (searchInitialFilters?.transaction_type && searchInitialFilters.transaction_type !== 'all') {
+        params.set('transaction_type', searchInitialFilters.transaction_type);
+      }
+      if (searchInitialFilters?.searchTerm) {
+        params.set('q', searchInitialFilters.searchTerm);
       }
       window.history.replaceState(null, '', `/?${params.toString()}`);
-    } else if (currentView === 'how-it-works') {
+    } else if (currentView === 'how_it_works') {
+      // The public URL is hyphenated (?view=how-it-works); the internal view id
+      // is underscored. They must stay in sync or the page is unreachable.
       window.history.replaceState(null, '', '/?view=how-it-works');
     } else if (currentView === 'admin') {
       window.history.replaceState(null, '', '/admin');
@@ -255,7 +309,7 @@ const MainApplication: React.FC = () => {
     } else if (currentView === 'home') {
       window.history.replaceState(null, '', '/');
     }
-  }, [currentView, selectedProperty, searchInitialFilters]);
+  }, [deepLinkReady, currentView, selectedProperty, searchInitialFilters]);
 
   // Redirect admin away from customer portal
   useEffect(() => {
@@ -372,6 +426,31 @@ const MainApplication: React.FC = () => {
             onBack={() => setCurrentView('search')}
             onUnitReserved={loadAllData}
           />
+        )}
+
+        {/* ?property=... resolved to nothing: an explicit, crawlable not-found
+            state (server answers 404 + noindex for the same URL) instead of
+            silently rendering the home page as a soft 404. */}
+        {currentView === 'property_not_found' && (
+          <section className="max-w-3xl mx-auto px-4 py-24 text-center space-y-6">
+            <span className="inline-flex mx-auto h-16 w-16 items-center justify-center rounded-2xl bg-purple-50 text-[#2A0845] text-3xl font-extrabold">
+              ?
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#2A0845] tracking-tight">
+              This listing is no longer available
+            </h1>
+            <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
+              The property you were looking for has been sold, rented out, unpublished or removed.
+              Browse the rooms, lands and properties that are currently on the market.
+            </p>
+            <button
+              type="button"
+              onClick={() => handleNavigate('search')}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#2A0845] text-white font-extrabold text-xs tracking-wider uppercase hover:bg-[#3D105E] transition-all cursor-pointer"
+            >
+              Browse available properties
+            </button>
+          </section>
         )}
 
         {currentView === 'portal' && profile?.role !== 'company_owner_admin' && (

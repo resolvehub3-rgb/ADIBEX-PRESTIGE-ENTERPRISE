@@ -232,7 +232,10 @@ export async function renderSitemap({ searchParams, supabaseUrl, anonKey, fetchI
       priority: page.priority,
     })),
     ...listings.map((listing) => ({
-      loc: `${siteUrl}/?property=${encodeURIComponent(listing.slug)}`,
+      // Path-based route (see vercel.json + src/App.tsx): /property/<slug> is
+      // served by api/property-page.ts with the listing's own head tags already
+      // in the HTML, and it is also the canonical the page declares itself.
+      loc: `${siteUrl}/property/${encodeURIComponent(listing.slug)}`,
       lastmod: listing.updated_at,
       changefreq: 'weekly',
       priority: '0.8',

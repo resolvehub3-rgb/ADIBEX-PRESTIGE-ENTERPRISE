@@ -7,7 +7,7 @@ import { absoluteSiteUrl } from './siteUrl';
  * Always the production domain, never localhost or a preview URL.
  */
 export function propertyShareUrl(property: Pick<Property, 'id' | 'slug'>): string {
-  return absoluteSiteUrl(`/?property=${encodeURIComponent(property.slug || property.id)}`);
+  return absoluteSiteUrl(`/property/${encodeURIComponent(property.slug || property.id)}`);
 }
 
 /** Short caption used by the native share sheet and social intents. */

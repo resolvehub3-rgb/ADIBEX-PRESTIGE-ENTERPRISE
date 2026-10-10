@@ -29,6 +29,8 @@ interface SearchFilterViewProps {
     transaction_type?: string;
     category?: string;
     property_type?: string;
+    /** Pre-filled keyword, e.g. from /?view=search&q=lands deep links. */
+    searchTerm?: string;
   };
   onSelectProperty: (property: Property) => void;
   favorites: string[];
@@ -47,7 +49,8 @@ export const SearchFilterView: React.FC<SearchFilterViewProps> = ({
   onOpenReservation,
   isLoading = false,
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
+  // Deep links such as /?view=search&q=lands arrive with the term already set.
+  const [searchTerm, setSearchTerm] = useState(initialFilters.searchTerm || '');
   const [transactionType, setTransactionType] = useState<string>(initialFilters.transaction_type || 'all');
   const [category, setCategory] = useState<string>(initialFilters.category || 'all');
   const [propertyType, setPropertyType] = useState<string>(initialFilters.property_type || 'all');

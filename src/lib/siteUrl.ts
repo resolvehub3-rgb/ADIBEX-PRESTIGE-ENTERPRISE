@@ -7,7 +7,10 @@
  * already 308-redirects to it), so set VITE_SITE_URL in the host's environment to
  * override; the default matches the domain configured in index.html.
  */
-const RAW_SITE_URL = (import.meta.env.VITE_SITE_URL || 'https://www.adibexprestige.com') as string;
+const RAW_SITE_URL =
+  // `import.meta.env` exists under Vite (browser and vite.config) but not when
+  // this module is imported by a plain Node script or a Vercel function.
+  ((import.meta as any).env?.VITE_SITE_URL as string | undefined) || 'https://www.adibexprestige.com';
 
 export const SITE_URL: string = RAW_SITE_URL.trim().replace(/\/+$/, '');
 
@@ -20,7 +23,7 @@ export function getSiteBaseUrl(): string {
   return SITE_URL;
 }
 
-/** Absolute URL for a path/query such as "/?property=my-slug". */
+/** Absolute URL for a path/query such as "/property/my-slug". */
 export function absoluteSiteUrl(pathOrQuery: string): string {
   const trimmed = pathOrQuery.startsWith('/') ? pathOrQuery : `/${pathOrQuery}`;
   return `${SITE_URL}${trimmed}`;

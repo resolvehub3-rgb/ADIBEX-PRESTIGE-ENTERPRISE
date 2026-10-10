@@ -1,6 +1,7 @@
 import { Property, CompanySettings } from '../types';
 import { isAbsoluteHttpUrl, usableMedia, primaryMedia as findPrimaryMedia } from '../lib/media';
 import { getSiteBaseUrl } from '../lib/siteUrl';
+import { HOW_IT_WORKS_STEPS, HOW_IT_WORKS_FAQS } from '../content/howItWorks';
 
 export interface SEOMetadata {
   title: string;
@@ -12,15 +13,23 @@ export interface SEOMetadata {
   ogImageAlt?: string;
   twitterCard?: 'summary' | 'summary_large_image';
   jsonLd?: object | object[];
+  /** Robots directive. Omitted means "index, follow" (the public default). */
+  robots?: string;
 }
 
 /**
  * Ensures or updates a <meta> element in the document head.
+ * An empty value removes the tag, which is how a noindex page drops a
+ * canonical/og:url it must not claim.
  */
 export function setMetaTag(attrName: 'name' | 'property', attrValue: string, content: string): void {
   if (typeof document === 'undefined') return;
 
   let element = document.head.querySelector(`meta[${attrName}="${attrValue}"]`) as HTMLMetaElement | null;
+  if (!content) {
+    if (element && element.parentNode) element.parentNode.removeChild(element);
+    return;
+  }
   if (!element) {
     element = document.createElement('meta');
     element.setAttribute(attrName, attrValue);
@@ -31,11 +40,16 @@ export function setMetaTag(attrName: 'name' | 'property', attrValue: string, con
 
 /**
  * Ensures or updates a <link rel="..."> element in the document head.
+ * An empty href removes the tag.
  */
 export function setLinkTag(rel: string, href: string): void {
   if (typeof document === 'undefined') return;
 
   let element = document.head.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+  if (!href) {
+    if (element && element.parentNode) element.parentNode.removeChild(element);
+    return;
+  }
   if (!element) {
     element = document.createElement('link');
     element.setAttribute('rel', rel);
@@ -72,10 +86,107 @@ export function removeJSONLD(id: string): void {
 }
 
 /**
+ * Attribute stamped on head tags injected server-side by
+ * src/lib/headInject.ts. Once React hydrates, applySEOMetadata() removes them
+ * before writing the client-side equivalents, so crawlers that render JS and
+ * crawlers that don't both end up with exactly one title / description /
+ * canonical / JSON-LD block — never two competing copies.
+ */
+export const SSR_SEO_MARKER = 'data-adibex-ssr';
+
+export function removeSSRSeoTags(): void {
+  if (typeof document === 'undefined') return;
+  const injected = document.head.querySelectorAll(`[${SSR_SEO_MARKER}]`);
+  injected.forEach((element) => element.parentNode?.removeChild(element));
+}
+
+/**
  * Format currency amount for SEO labels
  */
 function formatPriceForSEO(price: number, currency: string): string {
   return `${currency} ${price.toLocaleString()}`;
+}
+
+/** "GHS 1,200 per month" — rental frequency only when the row actually has one. */
+function formatPriceLabel(property: Property): string {
+  const price = formatPriceForSEO(property.price, property.currency);
+  if (property.transaction_type !== 'RENT' || !property.rental_frequency) return price;
+
+  // The column stores adverbs ("monthly"); a listing title must read like
+  // English ("per month"), and a wrong-sounding price line is the part of the
+  // snippet most people read first.
+  const PERIOD_LABEL: Record<string, string> = {
+    daily: 'per day',
+    weekly: 'per week',
+    monthly: 'per month',
+    yearly: 'per year',
+  };
+  return `${price} ${PERIOD_LABEL[property.rental_frequency] || 'per month'}`;
+}
+
+/** Human availability wording taken straight from the status column. */
+function availabilityLabel(status?: string): string {
+  switch (status) {
+    case 'AVAILABLE':
+      return 'Available now';
+    case 'PUBLISHED':
+      return 'Available';
+    case 'RESERVED':
+      return 'Currently reserved';
+    case 'RENTED':
+      return 'Currently rented';
+    case 'SOLD':
+      return 'Sold';
+    default:
+      return 'Currently unavailable';
+  }
+}
+
+/** schema.org availability for the same status values (never guessed). */
+function schemaAvailability(status?: string): string {
+  switch (status) {
+    case 'AVAILABLE':
+    case 'PUBLISHED':
+      return 'https://schema.org/InStock';
+    case 'RESERVED':
+      return 'https://schema.org/PreOrder';
+    case 'RENTED':
+    case 'SOLD':
+      return 'https://schema.org/SoldOut';
+    default:
+      return 'https://schema.org/OutOfStock';
+  }
+}
+
+/** Trims a meta description at a word boundary instead of mid-word. */
+function clampDescription(text: string, max = 160): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max - 1);
+  const boundary = cut.lastIndexOf(' ');
+  return `${(boundary > 60 ? cut.slice(0, boundary) : cut).trimEnd()}…`;
+}
+
+/**
+ * Canonical URL for a search view, carrying only the filters that are actually
+ * applied. A filtered page is therefore its own canonical (it really does show
+ * different listings), while /?view=search&category=all collapses back to the
+ * plain search URL instead of duplicating it.
+ *
+ * The parameter order matches STATIC_PAGES in scripts/sitemap-core.mjs so a
+ * sitemap URL and its canonical are byte-identical.
+ */
+function buildSearchCanonicalUrl(
+  base: string,
+  { category, type, transaction, q }: { category?: string; type?: string; transaction?: string; q?: string }
+): string {
+  const params = new URLSearchParams();
+  params.set('view', 'search');
+  if (category && category !== 'all') params.set('category', category);
+  if (type && type !== 'all') params.set('type', type);
+  if (transaction && transaction !== 'all') params.set('transaction_type', transaction);
+  if (q) params.set('q', q);
+  return `${base}/?${params.toString()}`;
 }
 
 /**
@@ -121,7 +232,10 @@ export function buildPropertySEOMetadata(
   const brand = settings?.brand_name || 'ADIBEX PRESTIGE PROPERTIES';
   const enterprise = settings?.company_name || 'ADIBEX PRESTIGE ENTERPRISE';
   const base = baseUrl || getSiteBaseUrl();
-  const canonicalUrl = `${base}/?property=${property.slug || property.id}`;
+  // Primary public route is the path-based /property/<slug> (see vercel.json,
+  // where that path is served by api/property-page with the tags already in the
+  // HTML). ?property= remains a working alias but is never canonicalised to.
+  const canonicalUrl = `${base}/property/${encodeURIComponent(property.slug || property.id)}`;
 
   const isLand =
     property.property_type.includes('land') ||
@@ -150,17 +264,38 @@ export function buildPropertySEOMetadata(
     .filter(Boolean)
     .join(', ');
 
-  const title = `${property.title} | ${categoryKeyword} in ${property.city} | ${brand}`;
+  // Price and availability come straight from the row's own columns.
+  const priceLabel = formatPriceLabel(property);
+  const availability = availabilityLabel(property.status);
 
-  // Rich description with transaction, price, specs, and search terms
-  const priceDisplay = formatPriceForSEO(property.price, property.currency);
   const specs = isLand
-    ? `${property.land_size_sqm ? `${property.land_size_sqm} sqm ` : ''}titled land for sale`
-    : `${property.bedrooms > 0 ? `${property.bedrooms} Bed` : 'Room'} • ${property.bathrooms > 0 ? `${property.bathrooms} Bath` : ''}`;
+    ? `${property.land_size_sqm ? `${property.land_size_sqm} sqm ` : ''}titled land`
+    : `${property.bedrooms > 0 ? `${property.bedrooms} bed` : 'room'}${
+        property.bathrooms > 0 ? `, ${property.bathrooms} bath` : ''
+      }`;
 
-  const description = property.description
-    ? `${property.title} in ${locationStr}. ${specs}, priced at ${priceDisplay} (${property.transaction_type.toLowerCase()}). Verified listing by ${brand}. Book an inspection tour or reserve online.`
-    : `Explore ${property.title} located at ${locationStr}. Available for ${property.transaction_type.toLowerCase()} at ${priceDisplay}. Verified ${categoryKeyword.toLowerCase()} by ${brand}.`;
+  // Title: property name + category + location + price. The brand is appended
+  // only while the whole string stays a sensible length, so the location and
+  // price a searcher cares about are never pushed past the cut-off.
+  const titleParts = [property.title, `${categoryKeyword} in ${property.city}`, priceLabel];
+  const titleWithBrand = [...titleParts, brand].join(' | ');
+  const title = titleWithBrand.length <= 96 ? titleWithBrand : titleParts.join(' | ');
+
+  // Meta description: the owner's own copy leads when one exists — it is the
+  // only part that differs listing-to-listing — followed by verified column
+  // values. With no description on the row the sentence still stands on real
+  // facts, and "verified" is only claimed when the listing is actually marked
+  // verified.
+  const ownedText = (property.description || '').replace(/\s+/g, ' ').trim();
+  const factLine =
+    `${property.title} in ${locationStr}. ${specs}, ${priceLabel}, ${availability.toLowerCase()}` +
+    `${property.is_verified ? `, verified by ${brand}` : ''}.`;
+  const factTail =
+    `${specs}, ${priceLabel}, ${availability.toLowerCase()}` +
+    `${property.is_verified ? `, verified by ${brand}` : ''}.`;
+  const description = clampDescription(
+    ownedText ? `${clampDescription(ownedText, 96)} ${factTail}` : factLine
+  );
 
   // Targeted keywords covering rooms, lands, properties explicitly
   const keywords = [
@@ -206,14 +341,17 @@ export function buildPropertySEOMetadata(
       description: property.description || description,
       url: canonicalUrl,
       image: crawlableImages.length > 0 ? crawlableImages : [ogImage],
-      datePosted: property.created_at || new Date().toISOString(),
+      // Only reported when the row really carries a creation timestamp —
+      // never backfilled with "now", which would be an invented date.
+      ...(property.created_at ? { datePosted: property.created_at } : {}),
       offers: {
         '@type': 'Offer',
         price: property.price,
         priceCurrency: property.currency,
-        availability: property.status === 'AVAILABLE' ? 'https://schema.org/InStock' : 'https://schema.org/PreOrder',
-        businessFunction: property.transaction_type === 'RENT' ? 'https://schema.org/LeaseOut' : 'https://schema.org/Sell',
-        validFrom: property.created_at || new Date().toISOString(),
+        availability: schemaAvailability(property.status),
+        businessFunction:
+          property.transaction_type === 'RENT' ? 'https://schema.org/LeaseOut' : 'https://schema.org/Sell',
+        ...(property.created_at ? { validFrom: property.created_at } : {}),
       },
       seller: {
         '@type': 'RealEstateAgent',
@@ -304,9 +442,11 @@ export function buildPropertySEOMetadata(
     description,
     keywords,
     canonicalUrl,
-    ogType: 'article',
+    // A listing is not an article; "website" is the correct Open Graph type and
+    // what every social scraper expects for a property detail page.
+    ogType: 'website',
     ogImage,
-    ogImageAlt: property.title,
+    ogImageAlt: `${property.title} — ${categoryKeyword} in ${property.city}`,
     twitterCard: 'summary_large_image',
     jsonLd,
   };
@@ -331,34 +471,55 @@ export function buildViewSEOMetadata(
 
   const defaultImage = `${base}/logo.png`;
 
-  // Specific search filter optimizations
+  // Specific search filter optimizations.
+  // Filtered search URLs are self-canonical: ?view=search&category=land really
+  // does show only land, so it is its own landing page rather than a duplicate.
   if (view === 'search') {
-    const typeFilter = filters?.propertyType || '';
-    const transactionFilter = filters?.transactionType || '';
-    const cityFilter = filters?.city || '';
+    // The app's filter object is snake_case (see SearchFilterView / Navbar);
+    // camelCase is accepted too so older callers keep working.
+    const typeFilter = String(filters?.property_type || filters?.propertyType || '');
+    const transactionFilter = String(filters?.transaction_type || filters?.transactionType || '');
+    const categoryFilter = String(filters?.category || '');
+    const cityFilter = String(filters?.city || '');
+    const termFilter = String(filters?.searchTerm || filters?.q || '');
 
     let searchTopic = 'Rooms, Lands & Properties';
-    if (typeFilter.includes('land')) {
+    if (typeFilter.includes('land') || categoryFilter === 'land') {
       searchTopic = 'Titled Lands & Plots for Sale';
     } else if (typeFilter === 'single_room' || typeFilter === 'self_contained') {
       searchTopic = 'Rooms & Self-Contained Units for Rent';
+    } else if (categoryFilter === 'commercial') {
+      searchTopic = 'Commercial Properties, Offices & Shops';
+    } else if (categoryFilter === 'residential') {
+      searchTopic = 'Residential Houses & Apartments';
     } else if (transactionFilter === 'RENT') {
       searchTopic = 'Rental Rooms, Apartments & Properties';
     } else if (transactionFilter === 'SALE') {
       searchTopic = 'Properties & Lands for Sale';
     }
 
+    const topicWithTerm = termFilter ? `${searchTopic} for “${termFilter}”` : searchTopic;
     const title = cityFilter
-      ? `${searchTopic} in ${cityFilter} | ${brand}`
-      : `${searchTopic} | Verified Listings | ${brand}`;
+      ? `${topicWithTerm} in ${cityFilter} | ${brand}`
+      : `${topicWithTerm} in Ghana | ${brand}`;
 
-    const description = `Find verified ${searchTopic.toLowerCase()} in ${cityFilter || 'Ghana'}. Filter by price, location, bedrooms, and amenities with ${brand}. Secure instant reservations & fast viewing bookings.`;
+    const description = clampDescription(
+      `Find ${topicWithTerm.toLowerCase()} in ${cityFilter || 'Ghana'}. ` +
+        `Filter by price, location, bedrooms and amenities with ${brand}, reserve instantly and book a viewing online.`
+    );
+
+    const canonicalUrl = buildSearchCanonicalUrl(base, {
+      category: categoryFilter,
+      type: typeFilter,
+      transaction: transactionFilter,
+      q: termFilter,
+    });
 
     return {
       title,
       description,
       keywords: `search ${searchTopic.toLowerCase()}, ${defaultKeywords}`,
-      canonicalUrl: `${base}/?view=search`,
+      canonicalUrl,
       ogType: 'website',
       ogImage: defaultImage,
       ogImageAlt: `${searchTopic} - ${brand}`,
@@ -368,7 +529,7 @@ export function buildViewSEOMetadata(
         '@type': 'SearchResultsPage',
         name: title,
         description,
-        url: `${base}/?view=search`,
+        url: canonicalUrl,
         provider: {
           '@type': 'RealEstateAgent',
           name: brand,
@@ -378,48 +539,96 @@ export function buildViewSEOMetadata(
     };
   }
 
-  if (view === 'how-it-works') {
+  // ?view=how-it-works is the public URL; how_it_works is the internal view id
+  // used by the navbar/footer. Both must resolve to the same page.
+  if (view === 'how-it-works' || view === 'how_it_works') {
+    const howTo = {
+      '@context': 'https://schema.org',
+      '@type': 'HowTo',
+      name: `How to Reserve Rooms, Lands & Properties with ${brand}`,
+      description:
+        'Guide to searching, scheduling a viewing, reserving, paying and collecting keys for real estate in Ghana.',
+      // Built from the exact steps rendered by HowItWorksView.
+      step: HOW_IT_WORKS_STEPS.map((step, index) => ({
+        '@type': 'HowToStep',
+        position: index + 1,
+        name: step.title,
+        text: step.description,
+      })),
+    };
+
+    // Built from the exact Q&A rendered by HowItWorksView — the home page
+    // carries no visible FAQ, so FAQPage markup only ever lives here.
+    const faq = {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: HOW_IT_WORKS_FAQS.map((faqItem) => ({
+        '@type': 'Question',
+        name: faqItem.q,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: faqItem.a,
+        },
+      })),
+    };
+
     return {
       title: `How to Rent Rooms, Buy Lands & Reserve Properties | ${brand}`,
-      description: `Step-by-step guide to finding rooms for rent, buying titled litigation-free lands, and reserving properties securely with ${brand}. Transparent fees, mobile money, and fast verification.`,
+      description: clampDescription(
+        `Step-by-step guide to finding rooms for rent, buying titled lands, and reserving properties securely with ${brand}: viewing, reservation lock, payment and receipt.`
+      ),
       keywords: `how to buy land in Ghana, rent a room online, property reservation guide, ${defaultKeywords}`,
       canonicalUrl: `${base}/?view=how-it-works`,
       ogType: 'website',
       ogImage: defaultImage,
       ogImageAlt: `How It Works - ${brand}`,
       twitterCard: 'summary',
-      jsonLd: {
-        '@context': 'https://schema.org',
-        '@type': 'HowTo',
-        name: 'How to Reserve Rooms, Lands & Properties with ADIBEX PRESTIGE PROPERTIES',
-        description: 'Guide to searching, scheduling viewing, and reserving real estate in Ghana.',
-        step: [
-          {
-            '@type': 'HowToStep',
-            position: 1,
-            name: 'Search Rooms, Lands & Properties',
-            text: 'Browse our curated, verified listings for rooms, lands, apartments, and commercial real estate.',
-          },
-          {
-            '@type': 'HowToStep',
-            position: 2,
-            name: 'Schedule Inspection Tour',
-            text: 'Request an in-person viewing with an assigned staff agent.',
-          },
-          {
-            '@type': 'HowToStep',
-            position: 3,
-            name: 'Instant Lock Reservation',
-            text: 'Secure the property or room with an instant lock and formal payment verification.',
-          },
-        ],
-      },
+      jsonLd: [howTo, faq],
     };
   }
 
-  // Default Home View - Maximum SEO punch for "room", "lands", "properties" to rank #1
+  // A listing URL that no longer resolves (deleted, unpublished or
+  // archived listing): tell crawlers not to index a soft-404 page.
+  if (view === 'property_not_found') {
+    return {
+      title: `Listing not found | ${brand}`,
+      description: 'This property listing is no longer available.',
+      keywords: defaultKeywords,
+      // no canonical: combining noindex with a canonical that points somewhere
+      // else sends crawlers mixed signals.
+      canonicalUrl: '',
+      ogType: 'website',
+      ogImage: defaultImage,
+      ogImageAlt: brand,
+      twitterCard: 'summary',
+      jsonLd: undefined,
+      robots: 'noindex, follow',
+    };
+  }
+
+  // Dashboards, portals and the auth flow are never public content.
+  if (['admin', 'agent', 'portal', 'auth'].includes(view)) {
+    return {
+      title: `${view === 'portal' ? 'My Account' : view === 'auth' ? 'Sign in' : 'Dashboard'} | ${brand}`,
+      description: `${brand} account area.`,
+      keywords: defaultKeywords,
+      canonicalUrl: '',
+      ogType: 'website',
+      ogImage: defaultImage,
+      ogImageAlt: brand,
+      twitterCard: 'summary',
+      jsonLd: undefined,
+      robots: 'noindex, nofollow',
+    };
+  }
+
+  // Default Home View — factual wording only ("#1" style ranking claims are
+  // not something the page can substantiate, so they are never emitted).
   const homeTitle = `ADIBEX PRESTIGE PROPERTIES | Rooms, Lands & Properties in Ghana | Rent & Buy`;
-  const homeDescription = `Ghana's #1 premier marketplace for verified rooms for rent, titled litigation-free lands, and luxury residential & commercial properties. Reserve your room or land with ADIBEX PRESTIGE PROPERTIES.`;
+  const homeDescription = clampDescription(
+    `Rooms for rent, titled lands and residential & commercial properties across Ghana. ` +
+      `Search listings by location and budget, book a viewing and reserve online with ${brand}.`
+  );
 
   const homeJsonLd = [
     {
@@ -448,15 +657,7 @@ export function buildViewSEOMetadata(
         latitude: 5.6037,
         longitude: -0.187,
       },
-      openingHoursSpecification: [
-        {
-          '@type': 'OpeningHoursSpecification',
-          dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-          opens: '08:00',
-          closes: '18:00',
-        },
-      ],
-      priceRange: 'GHS 200 - GHS 50,000,000',
+      priceRange: '$$',
       areaServed: [
         { '@type': 'AdministrativeArea', name: 'Greater Accra, Ghana' },
         { '@type': 'AdministrativeArea', name: 'Ashanti Region, Ghana' },
@@ -535,36 +736,6 @@ export function buildViewSEOMetadata(
         },
       ],
     },
-    {
-      '@context': 'https://schema.org',
-      '@type': 'FAQPage',
-      mainEntity: [
-        {
-          '@type': 'Question',
-          name: 'How do I find and rent a room with ADIBEX PRESTIGE PROPERTIES?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'You can search verified single rooms and self-contained units across Ghana on our platform, book an in-person viewing inspection, and reserve the room instantly with a secure lock countdown.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Are the lands listed on ADIBEX PRESTIGE PROPERTIES litigation-free and titled?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Yes. ADIBEX PRESTIGE ENTERPRISE verifies all lands and serviced plots to ensure authentic documentation, clear land commission site plans, and litigation-free ownership before publishing.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'What types of properties can I buy or rent?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'We offer single rooms, self-contained rooms, 1-4 bedroom apartments, executive houses, luxury villas, commercial offices, warehouses, and titled residential and commercial lands.',
-          },
-        },
-      ],
-    },
   ];
 
   return {
@@ -586,13 +757,27 @@ export function buildViewSEOMetadata(
 export function applySEOMetadata(metadata: SEOMetadata): void {
   if (typeof document === 'undefined') return;
 
+  // 0. Drop any server-injected head tags first (see src/lib/headInject.ts) so
+  // the rendered document ends up with exactly one copy of every tag.
+  removeSSRSeoTags();
+
   // 1. Document Title
   document.title = metadata.title;
 
   // 2. Standard Meta Tags
   setMetaTag('name', 'description', metadata.description);
   setMetaTag('name', 'keywords', metadata.keywords);
-  setMetaTag('name', 'robots', 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1');
+  setMetaTag(
+    'name',
+    'robots',
+    `${metadata.robots || 'index, follow'}, max-image-preview:large, max-snippet:-1, max-video-preview:-1`
+  );
+  // The static shell also ships googlebot/bingbot-specific tags. If they were
+  // left at their generic "index, follow" value they would override the generic
+  // robots directive for exactly those crawlers, which turns a noindex 404 into
+  // an indexed one. Mirror the directive instead of leaving the contradiction.
+  setMetaTag('name', 'googlebot', metadata.robots || 'index, follow');
+  setMetaTag('name', 'bingbot', metadata.robots || 'index, follow');
   setMetaTag('name', 'author', 'ADIBEX PRESTIGE ENTERPRISE');
   setMetaTag('name', 'application-name', 'ADIBEX PRESTIGE PROPERTIES');
 

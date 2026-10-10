@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Property, PropertyUnit, CurrencyCode, CompanySettings, UserProfile } from '../../types';
 import { formatCurrency } from '../../lib/db';
+import { propertyShareUrl } from '../../lib/share';
 import {
   usableMedia,
   isImageMedia,
@@ -79,7 +80,10 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
   const activeIsVideo = activeMedia ? isVideoMedia(activeMedia) : false;
 
   const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/?property=${encodeURIComponent(property.slug || property.id)}`;
+    // Canonical /property/<slug> link on the production host, never localhost or
+    // a preview domain — the previewer of a shared link needs the same URL
+    // search engines index.
+    const shareUrl = propertyShareUrl(property);
     try {
       if (navigator.share) {
         await navigator.share({

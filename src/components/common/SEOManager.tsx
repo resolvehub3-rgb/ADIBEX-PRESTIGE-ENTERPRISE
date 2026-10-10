@@ -41,35 +41,8 @@ export const SEOManager: React.FC<SEOManagerProps> = ({
     applySEOMetadata(metadata);
   }, [currentView, property, settings, searchFilters]);
 
-  // Hidden semantic markup aiding search engine crawlers (Googlebot, Bingbot, Applebot, DuckDuckBot)
-  return (
-    <aside
-      id="seo-crawl-index"
-      className="sr-only"
-      aria-hidden="true"
-      itemScope
-      itemType="https://schema.org/RealEstateAgent"
-    >
-      <meta itemProp="name" content="ADIBEX PRESTIGE PROPERTIES" />
-      <meta itemProp="legalName" content="ADIBEX PRESTIGE ENTERPRISE" />
-      <meta
-        itemProp="description"
-        content="Premier Ghana Real Estate agency for Room rentals, Titled Land acquisitions, and Luxury Properties sales."
-      />
-      <meta itemProp="telephone" content={settings?.phone || '+233 24 000 0000'} />
-      <meta itemProp="email" content={settings?.email || 'info@adibexprestige.com'} />
-      <span itemProp="address" itemScope itemType="https://schema.org/PostalAddress">
-        <meta itemProp="streetAddress" content={settings?.address || 'Accra, Ghana'} />
-        <meta itemProp="addressLocality" content="Accra" />
-        <meta itemProp="addressCountry" content="GH" />
-      </span>
-
-      {/* Target Search Keywords Context for Crawlers */}
-      <ul>
-        <li>Rooms: Single room self-contained, chamber and hall, executive rooms for rent in Ghana</li>
-        <li>Lands: Titled litigation-free land, serviced plots, commercial and residential land for sale</li>
-        <li>Properties: Luxury houses, apartments, villas, and commercial properties by ADIBEX PRESTIGE PROPERTIES</li>
-      </ul>
-    </aside>
-  );
+  // NOTE: no hidden / sr-only keyword markup here. Search engines treat content
+  // that is visually hidden but stuffed with keywords as spam, and the same
+  // organization data is already emitted as visible-page JSON-LD by seo.ts.
+  return null;
 };

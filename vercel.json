@@ -11,6 +11,10 @@
       "destination": "/api/sitemap"
     },
     {
+      "source": "/property/:slug",
+      "destination": "/api/property-page?slug=:slug"
+    },
+    {
       "source": "/((?!assets/|robots.txt|sitemap.xml).*)",
       "destination": "/index.html"
     }
