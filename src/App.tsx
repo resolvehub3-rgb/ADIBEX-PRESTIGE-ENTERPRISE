@@ -31,6 +31,7 @@ import {
   getPropertyByIdOrSlug,
 } from './lib/db';
 import { getSupabase, getSupabaseCredentials } from './lib/supabase';
+import { recordSiteVisit } from './lib/visitors';
 
 const MainApplication: React.FC = () => {
   const { profile } = useAuth();
@@ -90,6 +91,12 @@ const MainApplication: React.FC = () => {
   useEffect(() => {
     loadAllData();
   }, [profile?.role]);
+
+  // Count this browser session toward the local site-visitor total, which the
+  // admin dashboard surfaces on the Viewing Tours tab. Counted once per session.
+  useEffect(() => {
+    recordSiteVisit();
+  }, []);
 
   // Realtime: when the super-admin saves a listing or uploads a photo/video,
   // every open tab picks the change up without a hard refresh. Best effort —

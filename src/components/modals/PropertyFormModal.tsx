@@ -19,6 +19,8 @@ import {
   deleteInvalidPropertyMedia,
 } from '../../lib/db';
 import { usableMedia, isVideoMedia, isAbsoluteHttpUrl } from '../../lib/media';
+import { propertyShareUrl, propertyShareText } from '../../lib/share';
+import { ShareButton } from '../common/ShareButton';
 
 import { useAuth } from '../../context/AuthContext';
 
@@ -101,6 +103,16 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
 
+  // Set right after a successful publish/update so the admin can share the
+  // listing photo/video + link to social media in one click.
+  const [shareResult, setShareResult] = useState<{
+    id: string;
+    slug: string;
+    title: string;
+    reference_no: string | null;
+    coverUrl: string | null;
+  } | null>(null);
+
   // Re-sync the dialog with its target property whenever it opens, so an
   // "Add Property" session never inherits (or updates) a previous listing.
   const resetForm = () => {
@@ -145,6 +157,7 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
     setError(null);
     setWarning(null);
     setLoading(false);
+    setShareResult(null);
   };
 
   useEffect(() => {
@@ -154,6 +167,89 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
   }, [isOpen, propertyToEdit?.id]);
 
   if (!isOpen) return null;
+
+  // ---------------------------------------------------------------
+  // Success screen: listing saved → share it in one click
+  // ---------------------------------------------------------------
+  if (shareResult) {
+    const shareUrl = propertyShareUrl({ id: shareResult.id, slug: shareResult.slug });
+    const shareCaption = propertyShareText({
+      title: shareResult.title,
+      reference_no: shareResult.reference_no,
+    });
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-purple-100">
+          {/* Confirmation header */}
+          <div className="p-6 bg-gradient-to-r from-[#2A0845] to-[#3D105E] text-white text-center">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 className="w-7 h-7 text-emerald-300" />
+            </div>
+            <h3 className="font-bold text-lg text-white">
+              {isEditing ? 'Listing Updated' : 'Listing Published'}
+            </h3>
+            <p className="text-xs text-purple-200 mt-1">Your property is live on the marketplace.</p>
+          </div>
+
+          <div className="p-6 space-y-4">
+            {/* Saved listing summary */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+              {shareResult.coverUrl ? (
+                <img
+                  src={shareResult.coverUrl}
+                  alt={shareResult.title}
+                  className="w-16 h-16 rounded-xl object-cover border border-slate-200 shrink-0 bg-slate-100"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-xl bg-purple-100 text-[#2A0845] flex items-center justify-center shrink-0">
+                  <Building2 className="w-7 h-7" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-slate-800 truncate">{shareResult.title}</p>
+                {shareResult.reference_no && (
+                  <p className="text-[10px] text-purple-600 font-mono font-semibold">REF: {shareResult.reference_no}</p>
+                )}
+                <a
+                  href={shareUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block mt-1 text-[11px] font-bold text-[#2A0845] hover:text-[#3D105E] transition-colors"
+                >
+                  View listing &rarr;
+                </a>
+              </div>
+            </div>
+
+            {/* One-click share */}
+            <div>
+              <ShareButton
+                title={shareResult.title}
+                url={shareUrl}
+                text={shareCaption}
+                mediaUrl={shareResult.coverUrl}
+                className="w-full justify-center"
+              />
+              <p className="text-[11px] text-slate-400 text-center mt-2">
+                Shares the listing photo/video together with the public link to any social app.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 rounded-xl bg-[#2A0845] text-white font-bold text-xs hover:bg-[#3D105E] transition-all shadow-md shadow-purple-950/15 cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleToggleAmenity = (item: string) => {
     if (selectedAmenities.includes(item)) {
@@ -235,6 +331,8 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
 
       let tourSkipped = false;
       let propertyId = savedPropertyId || propertyToEdit?.id || null;
+      // Populated on create so the success screen can link the fresh listing.
+      let createdProperty: Property | null = null;
 
       if (propertyId) {
         let res = await updateProperty(propertyId, propertyData, profile?.id);
@@ -257,6 +355,7 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
         }
         if (!res.success || !res.data) throw new Error(res.error);
         propertyId = res.data.id;
+        createdProperty = res.data;
         setSavedPropertyId(propertyId);
       }
 
@@ -347,7 +446,18 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
         return;
       }
 
-      onClose();
+      // Success: hold the dialog open on a confirmation screen that offers a
+      // one-click share of the listing photo/video + link.
+      const allRows: SavedMediaRow[] = [...savedMedia, ...uploadedRows];
+      const cover = allRows.find((row) => row.media_type === 'IMAGE') || allRows[0] || null;
+
+      setShareResult({
+        id: propertyId as string,
+        slug: createdProperty?.slug || propertyToEdit?.slug || '',
+        title: title.trim() || createdProperty?.title || propertyToEdit?.title || 'Property listing',
+        reference_no: createdProperty?.reference_no ?? propertyToEdit?.reference_no ?? null,
+        coverUrl: cover?.url || null,
+      });
     } catch (err: any) {
       setError(err.message || 'Failed to save property listing');
     } finally {

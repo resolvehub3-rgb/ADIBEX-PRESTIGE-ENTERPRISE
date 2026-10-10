@@ -55,7 +55,10 @@ import {
   fetchStaffProfiles,
   updateUserRole,
 } from '../../lib/db';
-import { primaryMedia, isDurableMediaUrl, isPaymentProofPath } from '../../lib/media';
+import { primaryMedia, usableMedia, isDurableMediaUrl, isPaymentProofPath } from '../../lib/media';
+import { propertyShareUrl, propertyShareText } from '../../lib/share';
+import { ShareButton } from '../common/ShareButton';
+import { getSiteVisitStats, recordSiteVisit, resetSiteVisitStats, SiteVisitStats } from '../../lib/visitors';
 import { PropertyFormModal } from '../modals/PropertyFormModal';
 import { PaymentProofModal } from '../modals/PaymentProofModal';
 import {
@@ -110,6 +113,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [staffList, setStaffList] = useState<UserProfile[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [loadingAudit, setLoadingAudit] = useState(false);
+
+  // Local site-visitor counter (see src/lib/visitors.ts) shown on Viewing Tours.
+  const [visitStats, setVisitStats] = useState<SiteVisitStats>(() => getSiteVisitStats());
+  const [showVisitDetails, setShowVisitDetails] = useState(false);
+
+  useEffect(() => {
+    setVisitStats(recordSiteVisit());
+  }, []);
 
   useEffect(() => {
     setSettingsForm(settings);
@@ -224,7 +235,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       { icon: 'M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605', label: 'Property Portfolio Management', desc: 'Full CRUD access to all listings' },
                       { icon: 'M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z', label: 'Payment Verification', desc: 'Approve or reject bank & MoMo transfers' },
                       { icon: 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5', label: 'Reservation Control', desc: 'Confirm, cancel, or reject bookings' },
-                      { icon: 'M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z', label: 'Staff & Role Management', desc: 'Promote or reassign agent privileges' },
+                      { icon: 'M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z', label: 'Staff & Role Management', desc: 'Promote or reassign staff privileges' },
                     ].map((item, i) => (
                       <div key={i} className="flex items-start gap-4 group/item">
                         <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0 group-hover/item:bg-[#D4AF37]/10 group-hover/item:border-[#D4AF37]/20 transition-all duration-300">
@@ -328,7 +339,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     { id: 'payments', label: 'Payment Approvals', icon: DollarSign, count: pendingPaymentsCount },
     { id: 'reservations', label: 'Reservations', icon: Calendar, count: reservations.length },
     { id: 'viewings', label: 'Viewing Tours', icon: Eye, count: pendingViewingsCount },
-    { id: 'staff', label: 'Agents & Staff', icon: Users, count: null },
+    { id: 'staff', label: 'Staff', icon: Users, count: null },
     { id: 'settings', label: 'Company Settings', icon: Settings, count: null },
     { id: 'audit', label: 'Audit Trail', icon: ShieldCheck, count: null },
   ];
@@ -582,7 +593,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 {activeTab === 'payments' && 'Payment Approvals'}
                 {activeTab === 'reservations' && 'Reservations'}
                 {activeTab === 'viewings' && 'Viewing Tours'}
-                {activeTab === 'staff' && 'Agents & Staff'}
+                {activeTab === 'staff' && 'Staff'}
                 {activeTab === 'settings' && 'Company Settings'}
                 {activeTab === 'audit' && 'Audit Trail'}
               </h1>
@@ -749,7 +760,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </div>
                     <div className="px-5 py-3 bg-slate-50 border-t border-slate-100">
                       <button onClick={() => handleNavTab('viewings')} className="text-[11px] font-bold text-[#2A0845] hover:text-[#3D105E] transition-colors cursor-pointer">
-                        Assign Agents &rarr;
+                        Assign Staff &rarr;
                       </button>
                     </div>
                   </div>
@@ -1042,6 +1053,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                             </td>
                             <td className="py-4 px-5">
                               <div className="flex items-center justify-end gap-1.5">
+                                <ShareButton
+                                  compact
+                                  title={prop.title}
+                                  url={propertyShareUrl(prop)}
+                                  text={propertyShareText(prop)}
+                                  mediaUrl={(primaryMedia(prop.media) || usableMedia(prop.media)[0] || null)?.url || null}
+                                />
                                 <button
                                   onClick={() => { setEditingProperty(prop); setPropertyModalOpen(true); }}
                                   className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-purple-50 hover:border-purple-200 hover:text-[#2A0845] transition-all cursor-pointer"
@@ -1384,7 +1402,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="font-extrabold text-lg text-[#2A0845]">Viewing Tours</h2>
-                  <p className="text-xs text-slate-500">Manage property viewing appointments and assign agents.</p>
+                  <p className="text-xs text-slate-500">Manage property viewing appointments and assign staff.</p>
                 </div>
               </div>
 
@@ -1392,11 +1410,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               {isLoading ? (
                 <DashboardStatsSkeleton />
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {[
                     { label: 'Requested', count: viewings.filter((v) => v.status === 'REQUESTED').length, bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', dot: 'bg-purple-500' },
                     { label: 'Confirmed', count: viewings.filter((v) => v.status === 'CONFIRMED').length, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-500' },
                     { label: 'Completed', count: viewings.filter((v) => v.status === 'COMPLETED').length, bg: 'bg-sky-50', border: 'border-sky-200', text: 'text-sky-700', dot: 'bg-sky-500' },
+                    { label: 'Site Visitors', count: visitStats.visits, bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', dot: 'bg-indigo-500' },
                   ].map((stat) => (
                     <div key={stat.label} className={`${stat.bg} ${stat.border} border rounded-2xl p-4 text-center`}>
                       <div className="flex items-center justify-center gap-1.5 mb-1">
@@ -1404,6 +1423,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{stat.label}</span>
                       </div>
                       <p className={`text-2xl font-extrabold ${stat.text}`}>{stat.count}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Site visitor counter settings */}
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl bg-indigo-50/60 border border-indigo-100">
+                <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                  <span>
+                    <span className="font-bold text-[#2A0845]">Site Visitors:</span> counted locally on this device (once per browser
+                    session) &middot; {visitStats.today} today &middot; {visitStats.days} day{visitStats.days === 1 ? '' : 's'} &middot;{' '}
+                    {visitStats.firstVisitAt ? `since ${new Date(visitStats.firstVisitAt).toLocaleDateString()}` : 'no visits yet'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowVisitDetails((v) => !v)}
+                    className="text-[11px] font-bold text-[#2A0845] hover:text-[#3D105E] transition-colors cursor-pointer"
+                  >
+                    {showVisitDetails ? 'Hide Details' : 'Show Details'}
+                  </button>
+                  <button
+                    onClick={() => setVisitStats(resetSiteVisitStats())}
+                    className="text-[11px] font-bold text-rose-500 hover:text-rose-600 transition-colors cursor-pointer"
+                  >
+                    Reset Counter
+                  </button>
+                </div>
+              </div>
+
+              {showVisitDetails && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {[
+                    { label: 'Total Visits', value: visitStats.visits },
+                    { label: 'Visits Today', value: visitStats.today },
+                    { label: 'Days Visited', value: visitStats.days },
+                  ].map((item) => (
+                    <div key={item.label} className="bg-white border border-slate-200/80 rounded-2xl p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{item.label}</p>
+                      <p className="text-xl font-extrabold text-[#2A0845] mt-1">{item.value}</p>
                     </div>
                   ))}
                 </div>
@@ -1425,7 +1485,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           <th className="py-3.5 px-5 text-left">Schedule</th>
                           <th className="py-3.5 px-5 text-left">Property</th>
                           <th className="py-3.5 px-5 text-left">Customer</th>
-                          <th className="py-3.5 px-5 text-left">Agent</th>
+                          <th className="py-3.5 px-5 text-left">Staff</th>
                           <th className="py-3.5 px-5 text-left">Status</th>
                           <th className="py-3.5 px-5 text-right">Update</th>
                         </tr>
@@ -1510,13 +1570,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           )}
 
-          {/* TAB 6: STAFF & AGENTS */}
+          {/* TAB 6: STAFF */}
           {activeTab === 'staff' && (
             <div className="space-y-6">
               {/* Header */}
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 className="font-extrabold text-lg text-[#2A0845]">Agents & Staff</h2>
+                  <h2 className="font-extrabold text-lg text-[#2A0845]">Staff</h2>
                   <p className="text-xs text-slate-500">Manage team members and their access roles.</p>
                 </div>
               </div>
@@ -1529,7 +1589,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   {[
                     { label: 'Total Staff', count: staffList.length, bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700', dot: 'bg-slate-500' },
                     { label: 'Company Owners', count: staffList.filter((s) => s.role === 'company_owner_admin').length, bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', dot: 'bg-purple-500' },
-                    { label: 'Agents', count: staffList.filter((s) => s.role === 'agent').length, bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', dot: 'bg-amber-500' },
+                    { label: 'Staff Members', count: staffList.filter((s) => s.role === 'agent').length, bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', dot: 'bg-amber-500' },
                   ].map((stat) => (
                     <div key={stat.label} className={`${stat.bg} ${stat.border} border rounded-2xl p-4 text-center`}>
                       <div className="flex items-center justify-center gap-1.5 mb-1">
@@ -1586,7 +1646,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 <span className={`w-1.5 h-1.5 rounded-full ${
                                   member.role === 'company_owner_admin' ? 'bg-purple-500' : 'bg-amber-500'
                                 }`} />
-                                {member.role === 'company_owner_admin' ? 'Company Owner' : 'Agent / Staff'}
+                                {member.role === 'company_owner_admin' ? 'Company Owner' : 'Staff'}
                               </span>
                             </td>
                             <td className="py-4 px-5 text-slate-600">{member.email}</td>
@@ -1600,7 +1660,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 }}
                                 className="px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-700 bg-white hover:border-purple-300 focus:ring-2 focus:ring-[#2A0845]/10 focus:border-[#2A0845] transition-all cursor-pointer"
                               >
-                                <option value="agent">Agent / Staff</option>
+                                <option value="agent">Staff</option>
                                 <option value="company_owner_admin">Company Owner</option>
                                 <option value="customer">Customer (Demote)</option>
                               </select>
@@ -1617,7 +1677,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         <Users className="w-8 h-8" />
                       </div>
                       <h3 className="font-extrabold text-base text-slate-800 mb-1">No Staff Members</h3>
-                      <p className="text-xs text-slate-400 max-w-sm mx-auto">Team members and agents will appear here once added.</p>
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto">Team members will appear here once added.</p>
                     </div>
                   )}
                 </div>

@@ -371,7 +371,7 @@ export const SearchFilterView: React.FC<SearchFilterViewProps> = ({
             <h3 className="text-lg font-extrabold text-[#2A0845]">No Properties Found</h3>
             <p className="text-xs text-slate-500 leading-relaxed">
               {properties.length === 0
-                ? 'The database currently has no published property records. The Company Owner or designated Agents can publish new rooms, apartments, commercial properties, or lands directly from the Owner Admin Dashboard.'
+                ? 'The database currently has no published property records. The Company Owner or designated staff can publish new rooms, apartments, commercial properties, or lands directly from the Owner Admin Dashboard.'
                 : 'No properties matched your current filter criteria. Try adjusting your search keywords, region, or price filters.'}
             </p>
             {properties.length > 0 && (

@@ -192,7 +192,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
                     <div className="text-[10px] font-semibold text-[#D4AF37] flex items-center gap-1">
                       {profile.role === 'company_owner_admin' && '👑 Company Owner'}
-                      {profile.role === 'agent' && '💼 Agent / Staff'}
+                      {profile.role === 'agent' && '💼 Staff'}
                       {profile.role === 'customer' && '👤 Customer'}
                     </div>
                   </div>
@@ -222,7 +222,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-[#2A0845] hover:bg-purple-50 transition-colors"
                       >
                         <Briefcase className="w-4 h-4 text-[#D4AF37]" />
-                        <span>Agent / Staff Portal</span>
+                        <span>Staff Portal</span>
                       </button>
                     )}
 
@@ -362,7 +362,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => handleNav('agent')}
                   className="w-full py-2.5 px-3 rounded-xl bg-[#2A0845] text-white font-semibold text-xs text-center"
                 >
-                  Agent Portal
+                  Staff Portal
                 </button>
               )}
               <button

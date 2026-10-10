@@ -157,7 +157,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     Customer
                   </span>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Self-registration is open to customers only. Agent and Company Owner accounts are created by the administrator.
+                    Self-registration is open to customers only. Staff and Company Owner accounts are created by the administrator.
                   </p>
                 </div>
               </div>

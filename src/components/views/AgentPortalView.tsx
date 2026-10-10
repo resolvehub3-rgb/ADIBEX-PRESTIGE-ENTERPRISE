@@ -61,9 +61,9 @@ export const AgentPortalView: React.FC<AgentPortalViewProps> = ({
           <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
             <Briefcase className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-extrabold text-[#2A0845]">Agent & Staff Portal Access</h2>
+          <h2 className="text-xl font-extrabold text-[#2A0845]">Staff Portal Access</h2>
           <p className="text-xs text-slate-600 leading-relaxed">
-            This portal is reserved for registered real estate agents and field staff of{' '}
+            This portal is reserved for registered field staff of{' '}
             <strong>{settings.company_name}</strong>.
           </p>
           {profile && (
@@ -105,13 +105,13 @@ export const AgentPortalView: React.FC<AgentPortalViewProps> = ({
             </div>
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#D4AF37] bg-white/10 px-2 py-0.5 rounded-sm">
-                Property Agent Desk
+                Property Staff Desk
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold text-white mt-1">
                 {profile.full_name}
               </h1>
               <p className="text-xs text-purple-200">
-                ADIBEX PRESTIGE ENTERPRISE • Field Agent & Property Specialist
+                ADIBEX PRESTIGE ENTERPRISE • Field Staff & Property Specialist
               </p>
             </div>
           </div>
