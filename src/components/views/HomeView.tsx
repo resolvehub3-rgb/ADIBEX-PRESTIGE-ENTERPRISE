@@ -148,7 +148,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   <input
                     type="text"
-                    placeholder="City, area (e.g. Airport, East Legon)"
+                    placeholder="City, area (e.g. Obuasi, Ghana)"
                     value={heroSearch}
                     onChange={(e) => setHeroSearch(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-[#2A0845]/20 focus:border-[#2A0845]"
