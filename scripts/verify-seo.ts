@@ -210,6 +210,47 @@ async function testMetadata() {
     assert.ok(land.ogImage!.startsWith('https://'));
   });
 
+  await check('a video row is never emitted as the listing image', () => {
+    // Regression: a clip picked through the photo button used to be stored with
+    // media_type "IMAGE", and its .mp4 URL was then published as the listing
+    // image in JSON-LD. The URL, not the column, decides what counts as an image.
+    const videoMislabelled = makeProperty({
+      media: [
+        {
+          id: 'm-video',
+          property_id: 'a1b2c3d4-0000-4000-8000-000000000001',
+          media_type: 'IMAGE', // the wrong label, exactly as the old path saved it
+          url: 'https://ekzimwzpgbrzaqywpwxw.supabase.co/storage/v1/object/public/media/walkthrough.mp4',
+          caption: 'Video walkthrough',
+          sort_order: 0,
+          is_primary: true,
+          created_at: '2026-01-05T10:00:00.000Z',
+        },
+      ],
+    });
+
+    const meta = buildPropertySEOMetadata(videoMislabelled);
+    const blocks = Array.isArray(meta.jsonLd) ? meta.jsonLd : [meta.jsonLd!];
+    let sawImage = false;
+    for (const block of blocks) {
+      const reparsed = JSON.parse(JSON.stringify(block)) as Record<string, unknown>;
+      const image = reparsed.image;
+      if (!image) continue;
+      sawImage = true;
+      const urls = Array.isArray(image) ? image : [image];
+      for (const url of urls) {
+        assert.doesNotMatch(
+          String(url),
+          /\.mp4(\?|$)/i,
+          `${String(reparsed['@type'])} must not advertise a video as its image`
+        );
+      }
+    }
+    assert.ok(sawImage, 'the listing image block disappeared');
+    // og:image falls back to the brand logo rather than a video file.
+    assert.doesNotMatch(String(meta.ogImage), /\.mp4(\?|$)/i);
+  });
+
   await check('JSON-LD parses and claims nothing invented', () => {
     for (const meta of [room, land]) {
       assert.ok(meta.jsonLd, 'jsonLd missing');

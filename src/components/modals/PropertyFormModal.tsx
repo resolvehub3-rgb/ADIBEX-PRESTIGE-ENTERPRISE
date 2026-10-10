@@ -17,8 +17,14 @@ import {
   uploadMediaFile,
   addPropertyMedia,
   deleteInvalidPropertyMedia,
+  isVideoFile,
 } from '../../lib/db';
-import { usableMedia, isVideoMedia, isAbsoluteHttpUrl } from '../../lib/media';
+import {
+  usableMedia,
+  isVideoMedia,
+  isPlayableVideoUrl,
+  isAbsoluteHttpUrl,
+} from '../../lib/media';
 import { propertyShareUrl, propertyShareText } from '../../lib/share';
 import { ShareButton } from '../common/ShareButton';
 
@@ -38,6 +44,25 @@ const toSavedRows = (media?: Property['media']): SavedMediaRow[] =>
     url: m.url,
     media_type: isVideoMedia(m) ? 'VIDEO' : 'IMAGE',
   }));
+
+/**
+ * Sorts picked files by what they actually are, not by which button they were
+ * chosen with. `accept="image/*"` is only a hint — a file picker can be switched
+ * to "All files", and a clip that arrived through the photo button used to be
+ * stored with media_type "IMAGE", which then fed a .mp4 to crawlers as the
+ * listing image and rendered an empty tile in this very form.
+ */
+function partitionFiles(files: File[]): { images: File[]; videos: File[] } {
+  return {
+    images: files.filter((file) => !isVideoFile(file)),
+    videos: files.filter((file) => isVideoFile(file)),
+  };
+}
+
+/** media_type for an uploaded row, decided by the URL that Storage returned. */
+function mediaTypeForUrl(url: string): 'IMAGE' | 'VIDEO' {
+  return isPlayableVideoUrl(url) ? 'VIDEO' : 'IMAGE';
+}
 
 export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
   isOpen,
@@ -376,15 +401,19 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
             continue;
           }
 
+          // Decide from the URL, not from the picker: if a clip still reaches
+          // this loop it is stored as a video and is never made the cover.
+          const kind = mediaTypeForUrl(uploadRes.url);
+
           const mediaRes = await addPropertyMedia({
             property_id: propertyId,
             url: uploadRes.url,
-            is_primary: startingOrder === 0 && order === startingOrder,
-            media_type: 'IMAGE',
+            is_primary: kind === 'IMAGE' && startingOrder === 0 && order === startingOrder,
+            media_type: kind,
             sort_order: order,
           });
 
-          if (mediaRes.success) uploadedRows.push({ url: uploadRes.url, media_type: 'IMAGE' });
+          if (mediaRes.success) uploadedRows.push({ url: uploadRes.url, media_type: kind });
           else mediaErrors.push(mediaRes.error || 'unknown database error');
           order += 1;
         }
@@ -397,17 +426,19 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
             continue;
           }
 
+          const kind = mediaTypeForUrl(uploadRes.url);
+
           // Videos are their own media type: never the card cover, never <img>.
           const mediaRes = await addPropertyMedia({
             property_id: propertyId,
             url: uploadRes.url,
             is_primary: false,
-            media_type: 'VIDEO',
-            caption: file.name,
+            media_type: kind,
+            caption: kind === 'VIDEO' ? file.name : undefined,
             sort_order: order,
           });
 
-          if (mediaRes.success) uploadedRows.push({ url: uploadRes.url, media_type: 'VIDEO' });
+          if (mediaRes.success) uploadedRows.push({ url: uploadRes.url, media_type: kind });
           else mediaErrors.push(mediaRes.error || 'unknown database error');
           order += 1;
         }
@@ -841,7 +872,10 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
                       key={`saved-${idx}`}
                       className="relative w-24 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-100"
                     >
-                      {row.media_type === 'VIDEO' ? (
+                      {/* Rendered by what the URL really is: a row saved with
+                          the wrong media_type still previews correctly instead
+                          of showing an empty tile. */}
+                      {isVideoMedia(row) ? (
                         <video
                           src={row.url}
                           muted
@@ -862,7 +896,7 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
                           }}
                         />
                       )}
-                      {row.media_type === 'VIDEO' && (
+                      {isVideoMedia(row) && (
                         <span className="absolute bottom-1 left-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold uppercase">
                           <Film className="w-2.5 h-2.5" /> Video
                         </span>
@@ -884,9 +918,12 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
                 multiple
                 accept="image/*"
                 onChange={(e) => {
-                  if (e.target.files) {
-                    setImageFiles(Array.from(e.target.files));
-                  }
+                  if (!e.target.files) return;
+                  // A clip picked here is routed to the video list instead of
+                  // being stored as an image (see partitionFiles).
+                  const { images, videos } = partitionFiles(Array.from(e.target.files));
+                  setImageFiles(images);
+                  if (videos.length > 0) setVideoFiles((prev) => [...prev, ...videos]);
                 }}
                 className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#2A0845] file:text-white hover:file:bg-[#3D105E]"
               />
@@ -906,9 +943,12 @@ export const PropertyFormModal: React.FC<PropertyFormModalProps> = ({
                 multiple
                 accept="video/*"
                 onChange={(e) => {
-                  if (e.target.files) {
-                    setVideoFiles(Array.from(e.target.files));
-                  }
+                  if (!e.target.files) return;
+                  // Mirror of the photo picker: a photo chosen here goes back
+                  // to the photo list rather than being stored as a video.
+                  const { images, videos } = partitionFiles(Array.from(e.target.files));
+                  setVideoFiles(videos);
+                  if (images.length > 0) setImageFiles((prev) => [...prev, ...images]);
                 }}
                 className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-700 file:text-white hover:file:bg-purple-800"
               />

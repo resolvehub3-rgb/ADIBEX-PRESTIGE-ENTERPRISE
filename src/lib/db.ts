@@ -649,7 +649,13 @@ const MAX_VIDEO_BYTES = 100_000_000; // 100 MB
  */
 const MAX_INLINE_VIDEO_BYTES = 900_000;
 
-function isVideoFile(file: File): boolean {
+/**
+ * True for a file a `<video>` element has a chance of playing. Used to sort
+ * picked files into photos vs clips before anything is uploaded, so the saved
+ * `media_type` always describes the real file rather than the picker it came
+ * from (a clip chosen in the photo picker used to be stored as "IMAGE").
+ */
+export function isVideoFile(file: File): boolean {
   if ((file.type || '').toLowerCase().startsWith('video/')) return true;
   return /\.(mp4|m4v|mov|webm|ogv|ogg|avi|mkv)$/i.test((file.name || '').trim());
 }

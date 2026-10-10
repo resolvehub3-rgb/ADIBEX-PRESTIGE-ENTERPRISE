@@ -160,7 +160,10 @@ export const PropertyDetailView: React.FC<PropertyDetailViewProps> = ({
           <div className="lg:col-span-8 space-y-8">
             {/* Gallery Section */}
             <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/80 shadow-xs">
-              <div className="relative aspect-16/9 bg-slate-900 overflow-hidden">
+              {/* max-h keeps a portrait clip (a phone-shot walkthrough) from
+                  sitting as a narrow strip inside a very tall black frame: the
+                  frame stops growing, so object-contain fills more of it. */}
+              <div className="relative aspect-16/9 max-h-[70vh] bg-slate-900 overflow-hidden">
                 {activeMedia && activeIsVideo && isRenderable(activeMedia.url) ? (
                   isPlayableVideoUrl(activeMedia.url) ? (
                     <video

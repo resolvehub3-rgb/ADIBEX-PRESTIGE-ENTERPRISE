@@ -1,5 +1,5 @@
 import { Property, CompanySettings } from '../types';
-import { isAbsoluteHttpUrl, usableMedia, primaryMedia as findPrimaryMedia } from '../lib/media';
+import { isAbsoluteHttpUrl, usableMedia, isImageMedia, primaryMedia as findPrimaryMedia } from '../lib/media';
 import { getSiteBaseUrl } from '../lib/siteUrl';
 import { HOW_IT_WORKS_STEPS, HOW_IT_WORKS_FAQS } from '../content/howItWorks';
 
@@ -322,8 +322,13 @@ export function buildPropertySEOMetadata(
   // Primary image (falls back to the brand logo so shared links always preview
   // correctly). Crawlers can only fetch absolute http(s) URLs, so inline data
   // URLs and dead blob: URLs are never emitted as og:image.
+  //
+  // Selection goes through isImageMedia(), not the stored media_type column:
+  // a clip uploaded through the photo picker used to be saved as "IMAGE", and
+  // emitting its .mp4 URL as the listing image produced structured data no
+  // crawler can use. The URL is the reliable signal.
   const crawlableImages = usableMedia(property.media)
-    .filter((m) => m.media_type === 'IMAGE')
+    .filter(isImageMedia)
     .map((m) => m.url)
     .filter((url) => isAbsoluteHttpUrl(url));
   const coverUrl = findPrimaryMedia(property.media)?.url;
