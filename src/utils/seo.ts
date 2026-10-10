@@ -606,6 +606,24 @@ export function buildViewSEOMetadata(
     };
   }
 
+  // The one-time owner bootstrap. It is linked from nowhere and carries noindex
+  // so it can never appear in results, and it claims no canonical because a
+  // noindex page pointing elsewhere sends crawlers mixed signals.
+  if (view === 'admin_setup') {
+    return {
+      title: `Owner Setup | ${brand}`,
+      description: `${brand} company owner setup.`,
+      keywords: defaultKeywords,
+      canonicalUrl: '',
+      ogType: 'website',
+      ogImage: defaultImage,
+      ogImageAlt: brand,
+      twitterCard: 'summary',
+      jsonLd: undefined,
+      robots: 'noindex, nofollow',
+    };
+  }
+
   // Dashboards, portals and the auth flow are never public content.
   if (['admin', 'agent', 'portal', 'auth'].includes(view)) {
     return {

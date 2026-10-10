@@ -354,9 +354,22 @@ DROP POLICY IF EXISTS "Owner has full access to profiles" ON public.profiles;
 CREATE POLICY "Owner has full access to profiles" ON public.profiles
   FOR ALL USING (public.get_auth_role() = 'company_owner_admin');
 
-DROP POLICY IF EXISTS "Users can view and update their own profile" ON public.profiles;
-CREATE POLICY "Users can view and update their own profile" ON public.profiles
-  FOR ALL USING (id = auth.uid());
+-- Self-access is split per command. A single `FOR ALL USING (id = auth.uid())`
+-- policy would inherit its USING expression as the implicit WITH CHECK, which
+-- let a customer rewrite their own `role` to `company_owner_admin`. The role
+-- column is additionally protected by the profiles_prevent_role_escalation
+-- trigger (see the TRIGGERS section): RLS cannot compare NEW against OLD.
+DROP POLICY IF EXISTS "Users can select their own profile" ON public.profiles;
+CREATE POLICY "Users can select their own profile" ON public.profiles
+  FOR SELECT USING (id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
+CREATE POLICY "Users can insert their own profile" ON public.profiles
+  FOR INSERT WITH CHECK (id = auth.uid() AND role = 'customer');
+
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
+CREATE POLICY "Users can update their own profile" ON public.profiles
+  FOR UPDATE USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
 -- COMPANY SETTINGS
 DROP POLICY IF EXISTS "Public can view company settings" ON public.company_settings;
@@ -515,6 +528,11 @@ CREATE POLICY "Authenticated users can insert audit logs" ON public.audit_logs
 -- 3. Trigger to create profile on user registration
 -- ========================================================================
 
+-- Every account is created as a customer. `raw_user_meta_data->>'role'` is
+-- client-controlled (any browser can call supabase.auth.signUp with arbitrary
+-- metadata), so it must never be trusted here. Promotion to `agent` or
+-- `company_owner_admin` happens only through an existing owner (Staff tab), or
+-- via the one-shot public.claim_first_admin() bootstrap below.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -523,19 +541,93 @@ BEGIN
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'full_name', 'Customer'),
     NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'role', 'customer'),
+    'customer',
     NEW.raw_user_meta_data->>'phone'
   )
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+   SET search_path = public, pg_temp;
 
 -- Trigger for auth.users
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- Role guard. RLS can decide whether an UPDATE is permitted, but it cannot see
+-- the previous row, so only a BEFORE UPDATE trigger can stop an otherwise
+-- allowed update that also changes `role`. The adibex.role_guard_bypass
+-- transaction-local GUC lets claim_first_admin() write the first owner role.
+CREATE OR REPLACE FUNCTION public.prevent_role_escalation()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.role IS DISTINCT FROM OLD.role
+     AND COALESCE(current_setting('adibex.role_guard_bypass', true), '') <> 'on'
+     AND public.get_auth_role() IS DISTINCT FROM 'company_owner_admin' THEN
+    RAISE EXCEPTION 'Account role changes are restricted'
+      USING ERRCODE = '42501',
+            HINT = 'Only a company owner can change account roles.';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+   SET search_path = public, pg_temp;
+
+DROP TRIGGER IF EXISTS profiles_prevent_role_escalation ON public.profiles;
+CREATE TRIGGER profiles_prevent_role_escalation
+  BEFORE UPDATE OF role ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.prevent_role_escalation();
+
+-- Invoked by the table machinery, never by clients.
+REVOKE ALL ON FUNCTION public.prevent_role_escalation() FROM PUBLIC;
+
+-- One-shot bootstrap: promotes the calling authenticated user to
+-- company_owner_admin, but only while the table holds zero owners. The advisory
+-- lock serialises concurrent claims so two racing sign-ups cannot both win.
+CREATE OR REPLACE FUNCTION public.claim_first_admin()
+RETURNS void AS $$
+DECLARE
+  caller_id uuid := auth.uid();
+  owner_count integer;
+BEGIN
+  IF caller_id IS NULL THEN
+    RAISE EXCEPTION 'You must be signed in to claim owner access'
+      USING HINT = 'Sign in with the account you registered, then try again.';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('adibex.owner_bootstrap', 0));
+
+  SELECT count(*) INTO owner_count
+  FROM public.profiles
+  WHERE role = 'company_owner_admin';
+
+  IF owner_count > 0 THEN
+    RAISE EXCEPTION 'A company owner account already exists'
+      USING HINT = 'Ask an existing owner to add you from the Staff tab.';
+  END IF;
+
+  PERFORM set_config('adibex.role_guard_bypass', 'on', true);
+
+  UPDATE public.profiles
+  SET role = 'company_owner_admin',
+      updated_at = NOW()
+  WHERE id = caller_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No profile exists for this account'
+      USING HINT = 'Sign out, register again, then retry.';
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+   SET search_path = public, pg_temp;
+
+-- Only a signed-in account may call this; anon and PUBLIC are excluded.
+REVOKE ALL ON FUNCTION public.claim_first_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.claim_first_admin() FROM anon;
+GRANT EXECUTE ON FUNCTION public.claim_first_admin() TO authenticated;
 
 -- Trigger for updated_at
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()

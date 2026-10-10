@@ -9,6 +9,7 @@ import { PropertyDetailView } from './components/views/PropertyDetailView';
 import { CustomerPortalView } from './components/views/CustomerPortalView';
 import { AdminDashboardView } from './components/views/AdminDashboardView';
 import { AgentPortalView } from './components/views/AgentPortalView';
+import { AdminSetupView } from './components/views/AdminSetupView';
 import { HowItWorksView } from './components/views/HowItWorksView';
 import { ReservationModal } from './components/modals/ReservationModal';
 import { SEOManager } from './components/common/SEOManager';
@@ -163,11 +164,15 @@ const MainApplication: React.FC = () => {
     }
   }, [profile?.role, currentView]);
 
-  // Handle initial URL path-based routing (supports /admin, /agent on page load / refresh)
+  // Handle initial URL path-based routing (supports /admin, /admin/setup, /agent
+  // on page load / refresh). /admin/setup is the one-time owner bootstrap and is
+  // intentionally not linked from anywhere in the UI.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const path = window.location.pathname;
-    if (path === '/admin') {
+    if (path === '/admin/setup') {
+      setCurrentView('admin_setup');
+    } else if (path === '/admin') {
       setCurrentView('admin');
     } else if (path === '/agent') {
       setCurrentView('agent');
@@ -304,6 +309,8 @@ const MainApplication: React.FC = () => {
       window.history.replaceState(null, '', '/?view=how-it-works');
     } else if (currentView === 'admin') {
       window.history.replaceState(null, '', '/admin');
+    } else if (currentView === 'admin_setup') {
+      window.history.replaceState(null, '', '/admin/setup');
     } else if (currentView === 'agent') {
       window.history.replaceState(null, '', '/agent');
     } else if (currentView === 'home') {
@@ -377,8 +384,9 @@ const MainApplication: React.FC = () => {
       {/* Supabase Status Banner */}
 
 
-      {/* Main Brand Navbar - Hidden for Admin Dashboard */}
-      {currentView !== 'admin' && (
+      {/* Main Brand Navbar - Hidden for the owner dashboard and the one-time
+          owner-setup screen, both of which render their own full-screen chrome */}
+      {currentView !== 'admin' && currentView !== 'admin_setup' && (
         <Navbar
           currentView={currentView}
           onNavigate={handleNavigate}
@@ -481,6 +489,13 @@ const MainApplication: React.FC = () => {
           />
         )}
 
+        {currentView === 'admin_setup' && (
+          <AdminSetupView
+            onOpenAuth={() => setAuthModalOpen(true)}
+            onNavigate={handleNavigate}
+          />
+        )}
+
         {currentView === 'agent' && (
           <AgentPortalView
             properties={properties}
@@ -500,8 +515,8 @@ const MainApplication: React.FC = () => {
         )}
       </main>
 
-      {/* Brand Footer - Hidden for Admin Dashboard */}
-      {currentView !== 'admin' && (
+      {/* Brand Footer - Hidden for the owner dashboard and owner-setup screen */}
+      {currentView !== 'admin' && currentView !== 'admin_setup' && (
         <Footer settings={settings} onNavigate={handleNavigate} />
       )}
 

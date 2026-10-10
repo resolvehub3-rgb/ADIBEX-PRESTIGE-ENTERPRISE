@@ -263,8 +263,9 @@ async function testMetadata() {
     assert.equal(notFound.robots, 'noindex, follow');
     assert.equal(notFound.canonicalUrl, '');
 
-    // Account areas are not crawl-worthy at all.
-    for (const view of ['admin', 'agent', 'portal', 'auth']) {
+    // Account areas are not crawl-worthy at all. admin_setup is the one-time
+    // owner bootstrap — it is linked from nowhere and must never be indexed.
+    for (const view of ['admin', 'admin_setup', 'agent', 'portal', 'auth']) {
       const meta = buildViewSEOMetadata(view);
       assert.equal(meta.robots, 'noindex, nofollow', `${view} must be noindex`);
       assert.equal(meta.canonicalUrl, '', `${view} must not claim a canonical`);
