@@ -11,6 +11,9 @@ Disallow: /?view=admin
 Disallow: /?view=agent
 Disallow: /?view=portal
 
+# Serverless endpoints are not crawlable pages (the sitemap lives at /sitemap.xml)
+Disallow: /api/
+
 # Helpful crawl budget signals
 Allow: /*.css$
 Allow: /*.js$
