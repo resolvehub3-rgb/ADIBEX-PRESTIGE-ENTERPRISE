@@ -24,10 +24,11 @@ import { injectSeoHead, buildHeadTags } from '../src/lib/headInject';
 import {
   buildPropertySEOMetadata,
   buildViewSEOMetadata,
+  SSR_SEO_MARKER,
   type SEOMetadata,
 } from '../src/utils/seo';
 import { renderSitemap, PUBLIC_PROPERTY_STATUSES } from '../scripts/sitemap-core.mjs';
-import propertyPageHandler from '../api/property-page';
+import propertyPageHandler, { __testables as serverSeo } from '../api/property-page';
 import type { Property } from '../src/types';
 
 const CANONICAL_HOST = 'https://www.adibexprestige.com';
@@ -587,12 +588,88 @@ async function testPropertyFunction() {
 
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// 5. Server/client parity
+// --------------------------------------------------------------------------
+// Vercel does not bundle api/, so api/property-page.ts carries its own copy of
+// the metadata + head-injection logic (see the banner in that file). These
+// assertions are what keep the two copies from drifting: if either side
+// changes a title, description, canonical, tag set or JSON-LD field, this
+// fails and the change has to be made on both sides.
+
+async function testServerClientParity() {
+  const fixtures: Property[] = [
+    ROOM,
+    LAND,
+    makeProperty({ is_verified: false, description: '', media: [] }),
+    makeProperty({ property_type: 'office', transaction_type: 'RENT', status: 'RESERVED' }),
+    makeProperty({ property_type: 'apartment', price: 0, rental_frequency: 'yearly' }),
+  ];
+
+  await check('server and client property metadata are identical', () => {
+    for (const fixture of fixtures) {
+      const client = buildPropertySEOMetadata(fixture);
+      const server = serverSeo.buildPropertySEOMetadata(fixture as never);
+      assert.deepEqual(
+        { ...server, jsonLd: JSON.stringify(server.jsonLd) },
+        { ...client, jsonLd: JSON.stringify(client.jsonLd) },
+        `metadata drift for ${fixture.slug}`
+      );
+    }
+  });
+
+  await check('server and client head tag builders are identical', () => {
+    for (const fixture of fixtures) {
+      const client = buildPropertySEOMetadata(fixture);
+      const server = serverSeo.buildPropertySEOMetadata(fixture as never);
+      assert.equal(
+        serverSeo.buildHeadTags(server),
+        buildHeadTags(client),
+        `head tags drift for ${fixture.slug}`
+      );
+    }
+  });
+
+  await check('server and client splice the shell identically', () => {
+    for (const fixture of fixtures) {
+      const client = buildPropertySEOMetadata(fixture);
+      const server = serverSeo.buildPropertySEOMetadata(fixture as never);
+      assert.equal(
+        serverSeo.injectSeoHead(SHELL, server),
+        injectSeoHead(SHELL, client),
+        `shell splice drift for ${fixture.slug}`
+      );
+    }
+  });
+
+  await check('server and client agree on the not-found page', () => {
+    const client = buildViewSEOMetadata('property_not_found');
+    const server = serverSeo.buildNotFoundMetadata();
+    assert.equal(server.title, client.title);
+    assert.equal(server.description, client.description);
+    assert.equal(server.keywords, client.keywords);
+    assert.equal(server.canonicalUrl, client.canonicalUrl);
+    assert.equal(server.robots, client.robots);
+    assert.equal(serverSeo.buildHeadTags(server), buildHeadTags(client));
+  });
+
+  await check('the SSR marker the client strips matches the one the server stamps', () => {
+    const html = serverSeo.injectSeoHead(SHELL, serverSeo.buildPropertySEOMetadata(ROOM as never));
+    const stamped = html.match(/data-adibex-ssr/g) || [];
+    assert.ok(stamped.length > 5, 'server must stamp the marker on every injected tag');
+    // src/utils/seo.ts removes [data-adibex-ssr]; if this literal ever changes
+    // there, injected tags would survive hydration as duplicate copies.
+    assert.equal(SSR_SEO_MARKER, 'data-adibex-ssr');
+  });
+}
+
 async function main() {
   process.stdout.write('SEO verification\n');
   await testMetadata();
   await testHeadInjection();
   await testSitemap();
   await testPropertyFunction();
+  await testServerClientParity();
 
   process.stdout.write(`\n${passed} passed, ${failures.length} failed\n`);
   if (failures.length) {
