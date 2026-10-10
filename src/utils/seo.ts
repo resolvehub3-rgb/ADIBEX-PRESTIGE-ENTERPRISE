@@ -1,5 +1,6 @@
 import { Property, CompanySettings } from '../types';
 import { isAbsoluteHttpUrl, usableMedia, primaryMedia as findPrimaryMedia } from '../lib/media';
+import { getSiteBaseUrl } from '../lib/siteUrl';
 
 export interface SEOMetadata {
   title: string;
@@ -119,7 +120,7 @@ export function buildPropertySEOMetadata(
 ): SEOMetadata {
   const brand = settings?.brand_name || 'ADIBEX PRESTIGE PROPERTIES';
   const enterprise = settings?.company_name || 'ADIBEX PRESTIGE ENTERPRISE';
-  const base = baseUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://adibexprestige.com');
+  const base = baseUrl || getSiteBaseUrl();
   const canonicalUrl = `${base}/?property=${property.slug || property.id}`;
 
   const isLand =
@@ -323,7 +324,7 @@ export function buildViewSEOMetadata(
 ): SEOMetadata {
   const brand = settings?.brand_name || 'ADIBEX PRESTIGE PROPERTIES';
   const enterprise = settings?.company_name || 'ADIBEX PRESTIGE ENTERPRISE';
-  const base = baseUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://adibexprestige.com');
+  const base = baseUrl || getSiteBaseUrl();
 
   const defaultKeywords =
     'room, single room, self contained room, rooms for rent in Ghana, single room self contained, lands, lands for sale, titled land Accra, serviced plots Ghana, properties, properties for rent, properties for sale, commercial properties, houses for rent, luxury apartments, real estate Ghana, ADIBEX PRESTIGE PROPERTIES, ADIBEX PRESTIGE ENTERPRISE, East Legon properties, Airport residential, Kumasi lands, property booking SaaS';

@@ -1,0 +1,24 @@
+# robots.txt — ADIBEX PRESTIGE PROPERTIES
+# https://adibexprestige.com/robots.txt
+
+User-agent: *
+Allow: /
+
+# Private dashboards must never appear in search results
+Disallow: /admin
+Disallow: /agent
+Disallow: /?view=admin
+Disallow: /?view=agent
+Disallow: /?view=portal
+
+# Helpful crawl budget signals
+Allow: /*.css$
+Allow: /*.js$
+Allow: /*.png$
+Allow: /*.jpg$
+Allow: /*.jpeg$
+Allow: /*.webp$
+Allow: /*.mp4$
+
+# Every room, land and property listing is listed here
+Sitemap: https://adibexprestige.com/sitemap.xml
