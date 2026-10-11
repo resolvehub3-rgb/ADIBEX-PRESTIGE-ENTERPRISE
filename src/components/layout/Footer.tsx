@@ -7,10 +7,31 @@ interface FooterProps {
   onNavigate: (view: string, data?: any) => void;
 }
 
+/**
+ * Compact "City, Country" form of the head-office address, for the sub-footer
+ * strip. The contact column already carries the full address, so this stays
+ * short — and because it is derived from settings.address it follows whatever
+ * the admin saves in the dashboard instead of being frozen at "Accra, Ghana".
+ */
+export function shortLocation(address?: string | null): string {
+  const parts = String(address || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  return first.toLowerCase() === last.toLowerCase() ? first : `${first}, ${last}`;
+}
+
 export const Footer: React.FC<FooterProps> = ({ settings, onNavigate }) => {
   const whatsappUrl = `https://wa.me/${settings.whatsapp.replace(/[^\d]/g, '')}?text=${encodeURIComponent(
     'Hello ADIBEX PRESTIGE PROPERTIES, I would like to inquire about your available properties.'
   )}`;
+  const subFooterLocation = shortLocation(settings.address);
 
   return (
     <footer className="bg-[#1A042B] text-white border-t-4 border-[#D4AF37] pt-16 pb-12">
@@ -193,7 +214,7 @@ export const Footer: React.FC<FooterProps> = ({ settings, onNavigate }) => {
           </div>
           <div className="flex items-center gap-6">
             <span>Motto: <strong className="text-white">Your Vision Our Mission</strong></span>
-            <span>Accra, Ghana</span>
+            {subFooterLocation && <span>{subFooterLocation}</span>}
           </div>
         </div>
       </div>
