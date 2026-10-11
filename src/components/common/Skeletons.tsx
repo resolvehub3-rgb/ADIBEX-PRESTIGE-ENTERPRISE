@@ -86,19 +86,10 @@ export const PropertyCardSkeleton: React.FC = () => {
 
 /**
  * Responsive Grid of Property Card Skeletons
- *
- * `gridClassName` exists because this skeleton is shared by several views whose
- * grids differ. Passing the real grid's classes keeps the loading state
- * column-for-column identical to what replaces it — appending classes would not
- * work, since two competing `grid-cols-*` utilities resolve by stylesheet order
- * rather than by which comes last in the attribute.
  */
-export const PropertyListSkeleton: React.FC<{ count?: number; gridClassName?: string }> = ({
-  count = 6,
-  gridClassName = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6',
-}) => {
+export const PropertyListSkeleton: React.FC<{ count?: number }> = ({ count = 6 }) => {
   return (
-    <div className={gridClassName} aria-busy="true" aria-label="Loading properties">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" aria-busy="true" aria-label="Loading properties">
       {Array.from({ length: count }).map((_, i) => (
         <PropertyCardSkeleton key={i} />
       ))}
