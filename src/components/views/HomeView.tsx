@@ -26,6 +26,17 @@ import {
 import { PropertyCard } from '../common/PropertyCard';
 import { PropertyListSkeleton } from '../common/Skeletons';
 
+/**
+ * Grid for the "Featured Listings / Available Properties & Residences"
+ * showcase. Two columns from the smallest phone upward, three on large
+ * screens. The gap tightens below `lg` because two cards share a much narrower
+ * column on a phone.
+ *
+ * Shared by the skeleton and the real grid so the loading state can never
+ * disagree with what replaces it.
+ */
+const FEATURED_GRID_CLASS = 'grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6';
+
 interface HomeViewProps {
   properties: Property[];
   currency: CurrencyCode;
@@ -291,9 +302,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
 
         {isLoading ? (
-          <PropertyListSkeleton count={3} />
+          <PropertyListSkeleton count={3} gridClassName={FEATURED_GRID_CLASS} />
         ) : featuredProperties.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className={FEATURED_GRID_CLASS}>
             {featuredProperties.map((prop) => (
               <PropertyCard
                 key={prop.id}
